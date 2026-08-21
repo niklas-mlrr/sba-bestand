@@ -1,0 +1,325 @@
+{
+  "excel_file": "Bestand- und Nachbestellungsliste 2026.xlsx",
+  "sheet_name": "Bestand- und Nachbestellung",
+  "safety_stock": 5,
+  "match_overrides": {},
+  "mappings": [
+    {
+      "isbn": "9783062052224",
+      "angemeldet_cell": "B4",
+      "bestand_cell": "C4"
+    },
+    {
+      "isbn": "9783128640105",
+      "bestand_cell": "F4"
+    },
+    {
+      "isbn": "9783121052073",
+      "bestand_cell": "I4"
+    },
+    {
+      "isbn": "9783661310510",
+      "bestand_cell": "L4"
+    },
+    {
+      "isbn": "9783141506204",
+      "bestand_cell": "S4"
+    },
+    {
+      "isbn": "9783127563313",
+      "bestand_cell": "W4"
+    },
+    {
+      "isbn": "9783127335019",
+      "bestand_cell": "AD4"
+    },
+    {
+      "isbn": "9783507867703",
+      "bestand_cell": "AH4"
+    },
+    {
+      "isbn": "9783120066088",
+      "angemeldet_cell": "AK4",
+      "bestand_cell": "AL4"
+    },
+    {
+      "isbn": "9783661211015",
+      "angemeldet_cell": "AO4",
+      "bestand_cell": "AP4"
+    },
+    {
+      "isbn": "9783062052231",
+      "angemeldet_cell": "B5",
+      "bestand_cell": "C5"
+    },
+    {
+      "isbn": "9783128640204",
+      "bestand_cell": "F5"
+    },
+    {
+      "isbn": "9783661310527",
+      "bestand_cell": "L5"
+    },
+    {
+      "isbn": "9783127335118",
+      "bestand_cell": "AD5"
+    },
+    {
+      "isbn": "9783126240116",
+      "angemeldet_cell": "AS5",
+      "bestand_cell": "AT5"
+    },
+    {
+      "isbn": "9783661401003",
+      "angemeldet_cell": "AW5",
+      "bestand_cell": "AX5"
+    },
+    {
+      "isbn": "9783125374003",
+      "angemeldet_cell": "BA5",
+      "bestand_cell": "BB5"
+    },
+    {
+      "isbn": "9783062052248",
+      "angemeldet_cell": "B6",
+      "bestand_cell": "C6"
+    },
+    {
+      "isbn": "9783128640303",
+      "bestand_cell": "F6"
+    },
+    {
+      "isbn": "9783121052080",
+      "bestand_cell": "I6"
+    },
+    {
+      "isbn": "9783661310534",
+      "bestand_cell": "L6"
+    },
+    {
+      "isbn": "9783141506334",
+      "bestand_cell": "S6"
+    },
+    {
+      "isbn": "9783127563320",
+      "bestand_cell": "W6"
+    },
+    {
+      "isbn": "9783127335217",
+      "bestand_cell": "AD6"
+    },
+    {
+      "isbn": "9783507867727",
+      "bestand_cell": "AH6"
+    },
+    {
+      "isbn": "9783120066095",
+      "angemeldet_cell": "AK6",
+      "bestand_cell": "AL6"
+    },
+    {
+      "isbn": "9783661211022",
+      "angemeldet_cell": "AO6",
+      "bestand_cell": "AP6"
+    },
+    {
+      "isbn": "9783126240215",
+      "angemeldet_cell": "AS6",
+      "bestand_cell": "AT6"
+    },
+    {
+      "isbn": "9783125374102",
+      "angemeldet_cell": "BA6",
+      "bestand_cell": "BB6"
+    },
+    {
+      "isbn": "9783062052255",
+      "angemeldet_cell": "B7",
+      "bestand_cell": "C7"
+    },
+    {
+      "isbn": "9783128640402",
+      "bestand_cell": "F7"
+    },
+    {
+      "isbn": "9783661710709",
+      "bestand_cell": "O7"
+    },
+    {
+      "isbn": "9783127335316",
+      "bestand_cell": "AD7"
+    },
+    {
+      "isbn": "9783125360402",
+      "angemeldet_cell": "BA7",
+      "bestand_cell": "BB7"
+    },
+    {
+      "isbn": "9783062052262",
+      "angemeldet_cell": "B8",
+      "bestand_cell": "C8"
+    },
+    {
+      "isbn": "9783128740508",
+      "bestand_cell": "F8"
+    },
+    {
+      "isbn": "9783121046157",
+      "bestand_cell": "I9"
+    },
+    {
+      "isbn": "9783661310541",
+      "bestand_cell": "L8"
+    },
+    {
+      "isbn": "9783661711065",
+      "bestand_cell": "O8"
+    },
+    {
+      "isbn": "9783141506228",
+      "bestand_cell": "S8"
+    },
+    {
+      "isbn": "9783127563337",
+      "bestand_cell": "W8"
+    },
+    {
+      "isbn": "9783120075721",
+      "bestand_cell": "AA8"
+    },
+    {
+      "isbn": "9783127335415",
+      "bestand_cell": "AD8"
+    },
+    {
+      "isbn": "9783507867741",
+      "bestand_cell": "AH8"
+    },
+    {
+      "isbn": "9783120066101",
+      "angemeldet_cell": "AK8",
+      "bestand_cell": "AL8"
+    },
+    {
+      "isbn": "9783766166814",
+      "angemeldet_cell": "AO8",
+      "bestand_cell": "AP8"
+    },
+    {
+      "isbn": "9783125360501",
+      "angemeldet_cell": "BA8",
+      "bestand_cell": "BB8"
+    },
+    {
+      "isbn": "9783062052279",
+      "angemeldet_cell": "B9",
+      "bestand_cell": "C9"
+    },
+    {
+      "isbn": "9783128542607",
+      "bestand_cell": "F9"
+    },
+    {
+      "isbn": "9783661710716",
+      "bestand_cell": "O9"
+    },
+    {
+      "isbn": "9783127335576",
+      "bestand_cell": "AD9"
+    },
+    {
+      "isbn": "9783125360808",
+      "angemeldet_cell": "BA9",
+      "bestand_cell": "BB9"
+    },
+    {
+      "isbn": "9783140282680",
+      "angemeldet_cell": "B10",
+      "bestand_cell": "C10"
+    },
+    {
+      "isbn": "9783128343907",
+      "bestand_cell": "F10"
+    },
+    {
+      "isbn": "9783507533059",
+      "bestand_cell": "I10"
+    },
+    {
+      "isbn": "9783062301261",
+      "bestand_cell": "L10"
+    },
+    {
+      "isbn": "9783661720913",
+      "bestand_cell": "O10"
+    },
+    {
+      "isbn": "9783141508031",
+      "angemeldet_cell": "R10",
+      "bestand_cell": "S10"
+    },
+    {
+      "isbn": "9783127568905",
+      "angemeldet_cell": "V10",
+      "bestand_cell": "W10"
+    },
+    {
+      "isbn": "9783507887305",
+      "bestand_cell": "AD10"
+    },
+    {
+      "isbn": "9783141523300",
+      "angemeldet_cell": "AG10",
+      "bestand_cell": "AH10"
+    },
+    {
+      "isbn": "9783125500044",
+      "angemeldet_cell": "C15",
+      "bestand_cell": "D15"
+    },
+    {
+      "isbn": "9783661720937",
+      "angemeldet_cell": "G15",
+      "bestand_cell": "H15"
+    },
+    {
+      "isbn": "9783661720920",
+      "angemeldet_cell": "K15",
+      "bestand_cell": "L15"
+    },
+    {
+      "isbn": "9783141508338",
+      "angemeldet_cell": "O15",
+      "bestand_cell": "P15"
+    },
+    {
+      "isbn": "9783127568912",
+      "angemeldet_cell": "S15",
+      "bestand_cell": "T15"
+    },
+    {
+      "isbn": "9783507887435",
+      "angemeldet_cell": "W15"
+    },
+    {
+      "isbn": "9783507887367",
+      "angemeldet_cell": "AA15",
+      "bestand_cell": "AB15"
+    },
+    {
+      "isbn": "9783060113088",
+      "angemeldet_cell": "AE15",
+      "bestand_cell": "AF15"
+    },
+    {
+      "isbn": "9783507100947",
+      "angemeldet_cell": "AI15",
+      "bestand_cell": "AJ15"
+    },
+    {
+      "isbn": "9783507100923",
+      "angemeldet_cell": "AM15",
+      "bestand_cell": "AN15"
+    }
+  ]
+}

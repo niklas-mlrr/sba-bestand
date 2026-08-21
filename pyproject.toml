@@ -1,0 +1,34 @@
+[project]
+name = "sba-bestand"
+version = "0.1.0"
+description = "Excel-Tooling der Schulbuchausleihe: Bestands-/Nachbestellungsliste und Bücherlisten nach Fach"
+requires-python = ">=3.10"
+dependencies = [
+    # Bestand (update_bestand*.py)
+    "openpyxl>=3.1,<4",
+    "isbnlib>=3.10",
+    "python-dotenv>=1,<2",
+    # Bücherlisten (generate_booklists.py)
+    "reportlab>=4,<5",
+    "requests>=2.31,<3",
+    # IServ-API-Client (Geschwister-Repo, siehe [tool.uv.sources])
+    "iserv-ausleihe-api",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.8,<1"]
+
+# ausleihe-api wird als Geschwister-Repo geklont; identisches Muster wie in
+# ausleihe-ausgabe/pyproject.toml.
+[tool.uv.sources]
+iserv-ausleihe-api = { path = "../ausleihe-api", editable = true }
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py310"
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
