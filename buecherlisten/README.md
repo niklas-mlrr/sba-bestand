@@ -18,15 +18,25 @@ uv sync
 
 cd buecherlisten
 
-# 1 PDF, neue Seite pro Fach (laufendes Schuljahr):
-python3 generate_booklists.py --mode combined
+# 1 PDF, neue Seite pro Fach, alphabetisch sortiert (laufendes Schuljahr, Default):
+uv run python3 generate_booklists.py --mode alphabet
+
+# 1 PDF, neue Seite pro Fach, nach Aufgabenfeld sortiert (laut TRG-Website):
+uv run python3 generate_booklists.py --mode aufgabenfeld
 
 # 1 PDF-Datei pro Fach:
-python3 generate_booklists.py --mode split
+uv run python3 generate_booklists.py --mode split
 
 # bestimmtes Schuljahr, eigener Zielordner:
-python3 generate_booklists.py --schoolyear "2025/2026" --mode split --output-dir ~/Downloads
+uv run python3 generate_booklists.py --schoolyear "2025/2026" --mode split --output-dir ~/Downloads
 ```
+
+`uv run` sorgt dafür, dass die von `uv sync` installierten Abhängigkeiten
+(reportlab, requests, …) auch tatsächlich verwendet werden — ein einfaches
+`python3 generate_booklists.py` mit dem System-Python schlägt sonst mit
+`ModuleNotFoundError: No module named 'reportlab'` fehl. Alternativ direkt mit
+`.venv/bin/python3 generate_booklists.py ...` oder nach Aktivieren von
+`.venv` (`source ../.venv/bin/activate`) mit `python3 ...`.
 
 ## Inhalt pro Fach
 

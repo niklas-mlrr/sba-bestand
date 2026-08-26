@@ -211,20 +211,14 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "isbnlib", marker = "extra == 'bestand'", specifier = ">=3.10" },
-    { name = "isbnlib", marker = "extra == 'buecherlisten'", specifier = ">=3.10" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8,<2" },
-    { name = "openpyxl", marker = "extra == 'bestand'", specifier = ">=3.1,<4" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.7,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9,<10" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7,<8" },
-    { name = "python-dotenv", marker = "extra == 'bestand'", specifier = ">=1,<2" },
-    { name = "python-dotenv", marker = "extra == 'buecherlisten'", specifier = ">=1,<2" },
-    { name = "reportlab", marker = "extra == 'buecherlisten'", specifier = ">=4,<5" },
     { name = "requests", specifier = ">=2.31,<3" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8,<1" },
 ]
-provides-extras = ["bestand", "buecherlisten", "dev"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "openpyxl"

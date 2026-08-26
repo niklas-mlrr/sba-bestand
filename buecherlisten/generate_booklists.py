@@ -30,16 +30,30 @@ Ausleihe-API liefert ISBNs immer ohne Trennzeichen.
 Rein lesend (nur GET). Kein Schreibzugriff auf die IServ-Produktionsdatenbank.
 
 Verwendung:
-  python3 generate_booklists.py [--schoulyear 2026/2027] [--mode combined|split]
+  python3 generate_booklists.py [--schoulyear 2026/2027]
+                                 [--mode split|alphabet|aufgabenfeld]
                                  [--subjects "Fach1" "Fach2" ...] [--list-subjects]
                                  [--output-dir PFAD] [--confirmation] [--duplex | --duplex-if-needed]
 
   --schoolyear     Schuljahr wie "2026/2027" (Default: laufendes Schuljahr)
-  --mode           combined = eine PDF-Datei mit einer neuen Seite pro Fach,
-                              benannt "Bücherliste Fächer <Schuljahr>.pdf"
-                   split    = eine PDF-Datei pro Fach,
-                              benannt "Bücherliste <Fach> <Schuljahr>.pdf"
-                   (Default: combined)
+  --mode           split       = eine PDF-Datei pro Fach,
+                                  benannt "Bücherliste <Fach> <Schuljahr>.pdf"
+                   alphabet    = eine PDF-Datei mit einer neuen Seite pro Fach
+                                  (Fächer alphabetisch sortiert), benannt
+                                  "Bücherliste Fächer <Schuljahr>.pdf"
+                   aufgabenfeld = wie alphabet, aber die Fächer erst nach
+                                  Aufgabenfeld (A/B/C, laut Tabelle auf
+                                  trg-osterode.de/.../fachkonferenzleitungen/,
+                                  ersatzweise .../unterricht-und-ganztags-
+                                  angebot/faecher/, falls Erstere nicht mehr
+                                  existiert) sortiert, dann alphabetisch;
+                                  Fächer, die in keiner der beiden Quellen
+                                  gelistet sind, kommen zuletzt, alphabetisch.
+                                  Ist keine der beiden Quellen erreichbar,
+                                  wird stattdessen alphabetisch sortiert.
+                                  Benannt "Bücherliste Fächer (nach
+                                  Aufgabenfeld) <Schuljahr>.pdf"
+                   (Default: alphabet)
   --subjects       Nur diese Fächer aufnehmen (ein oder mehrere Namen, exakt
                     wie in der Bücherliste, z.B. --subjects Deutsch Mathematik).
                     Default: alle Fächer, die im Schuljahr vorkommen.
@@ -274,8 +288,14 @@ def fmt_grades(grades: tuple[int, ...]) -> str:
 
 # Öffentliche TRG-Website (kein IServ, keine Produktionsdaten) — liefert die
 # Fach->Name-Zuordnung der Fachkonferenzleitungen für die Kopfzeile bei
-# --confirmation. Nur GET, rein lesend.
+# --confirmation, sowie (als primäre Quelle) die Fach->Aufgabenfeld-Zuordnung
+# für --mode aufgabenfeld. Nur GET, rein lesend.
 FKL_URL = "https://trg-osterode.de/wir-am-trg/kollegium/fachkonferenzleitungen/"
+
+# Fallback-Quelle für die Fach->Aufgabenfeld-Zuordnung (--mode aufgabenfeld),
+# falls FKL_URL nicht (mehr) erreichbar ist oder deren Tabelle keine
+# Aufgabenfeld-Zuordnung mehr enthält. Nur GET, rein lesend.
+FAECHER_URL = "https://trg-osterode.de/unterricht-und-ganztagsangebot/faecher/"
 
 
 def _clean_cell(raw_html: str) -> str:
@@ -307,9 +327,10 @@ def fetch_fkl_mapping(*, timeout: float = 10.0) -> dict[str, str]:
     return mapping
 
 
-def find_fkl_name(mapping: dict[str, str], subject: str) -> str | None:
-    """Name zum Fach — exakter Treffer zuerst, sonst Präfix-Abgleich in beide
-    Richtungen (Ausleihe-API kennt z.B. nur "Politik", die Website führt
+def find_mapped_value(mapping: dict[str, str], subject: str) -> str | None:
+    """Wert zum Fach (Name oder Aufgabenfeld, je nach übergebener Zuordnung) —
+    exakter Treffer zuerst, sonst Präfix-Abgleich in beide Richtungen
+    (Ausleihe-API kennt z.B. nur "Politik", die Website führt
     "Politik-Wirtschaft")."""
     if not mapping:
         return None
@@ -322,6 +343,70 @@ def find_fkl_name(mapping: dict[str, str], subject: str) -> str | None:
         if key_cf.startswith(cf) or cf.startswith(key_cf):
             return name
     return None
+
+
+def fetch_aufgabenfeld_mapping(*, timeout: float = 10.0) -> dict[str, str]:
+    """Fach -> Aufgabenfeld ("Aufgabenfeld A"/"B"/"C"), von derselben
+    Fachkonferenzleitungen-Tabelle wie fetch_fkl_mapping() gelesen.
+
+    Die Tabelle gliedert die Fächer durch eigene Überschriftszeilen
+    ("Aufgabenfeld A" in der ersten Spalte, restliche Spalten leer), gefolgt
+    von den Fachzeilen dieses Aufgabenfelds bis zur nächsten Überschrift.
+    """
+    resp = requests.get(FKL_URL, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
+    resp.raise_for_status()
+    table_match = re.search(r"<table>(.*?)</table>", resp.text, re.S)
+    if not table_match:
+        return {}
+    mapping: dict[str, str] = {}
+    current_field: str | None = None
+    for row in re.findall(r"<tr>(.*?)</tr>", table_match.group(1), re.S):
+        cells = [_clean_cell(c) for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+        if not cells or not cells[0]:
+            continue
+        if re.match(r"Aufgabenfeld\s+\S+", cells[0]) and not any(cells[1:]):
+            current_field = cells[0]
+            continue
+        if current_field is not None:
+            mapping[cells[0]] = current_field
+    return mapping
+
+
+def fetch_aufgabenfeld_mapping_from_faecher_page(*, timeout: float = 10.0) -> dict[str, str]:
+    """Fallback für fetch_aufgabenfeld_mapping(): die TRG-Fächerübersichtsseite
+    (FAECHER_URL) listet die Aufgabenfelder als drei Tabellenspalten (Kopfzeile
+    "Aufgabenfeld A"/"B"/"C", darunter je Spalte die zugehörigen Fächer,
+    unterschiedlich viele Zeilen pro Spalte — kürzere Spalten haben leere
+    Zellen in den überzähligen Zeilen)."""
+    resp = requests.get(FAECHER_URL, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
+    resp.raise_for_status()
+    table_match = re.search(r"<table[^>]*>(.*?)</table>", resp.text, re.S)
+    if not table_match:
+        return {}
+    rows = re.findall(r"<tr>(.*?)</tr>", table_match.group(1), re.S)
+    if not rows:
+        return {}
+    headers = [_clean_cell(c) for c in re.findall(r"<td[^>]*>(.*?)</td>", rows[0], re.S)]
+    mapping: dict[str, str] = {}
+    for row in rows[1:]:
+        cells = [_clean_cell(c) for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+        for i, subject in enumerate(cells):
+            if subject and i < len(headers) and headers[i].startswith("Aufgabenfeld"):
+                mapping[subject] = headers[i]
+    return mapping
+
+
+def subject_sort_key(subject: str, aufgabenfeld_map: dict[str, str]) -> tuple[int, str, str]:
+    """Sortierschlüssel für --mode aufgabenfeld: Fächer mit bekanntem
+    Aufgabenfeld zuerst (gruppiert und alphabetisch je Feld), unbekannte
+    Fächer danach, alphabetisch. Bei leerer `aufgabenfeld_map` (keine der
+    Quellen erreichbar / kein Aufgabenfeld dort gefunden) landet jedes Fach in
+    der zweiten Gruppe — das Ergebnis ist dann rein alphabetisch, wie
+    gefordert."""
+    field = find_mapped_value(aufgabenfeld_map, subject)
+    if field is None:
+        return (1, "", subject.casefold())
+    return (0, field, subject.casefold())
 
 
 # Kollegiumsseite: Name -> persönliches Lehrerkürzel (Spalte "Kürzel", z.B.
@@ -1039,7 +1124,7 @@ def subject_story(
     confirm_value = None
     teacher_kuerzel = None
     if confirmation:
-        fkl_name = find_fkl_name(fkl_map or {}, subject)
+        fkl_name = find_mapped_value(fkl_map or {}, subject)
         teacher_kuerzel = find_kollegium_kuerzel(kollegium_map or {}, fkl_name)
         # Kopfzeile zeigt bevorzugt das Kürzel; ist das nicht auflösbar,
         # ersatzweise der Name, sonst ein Platzhalter (nie komplett leer).
@@ -1088,7 +1173,7 @@ def measure_subject_pages(
     """Baut alle Fächer einmal probeweise in einen verworfenen Speicherpuffer
     (kein Datei-Output), jedes mit eigenem, frisch beginnendem PageTemplate —
     damit ist die ermittelte Seitenzahl je Fach unabhängig vom später
-    tatsächlich gewählten `--mode` (combined/split) und entspricht exakt der
+    tatsächlich gewählten `--mode` (split/alphabet/aufgabenfeld) und entspricht exakt der
     natürlichen (ungepolsterten) Seitenzahl, die dieses Fach auch im
     Enddokument bräuchte.
 
@@ -1306,8 +1391,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Bücherlisten nach Fach als PDF.")
     parser.add_argument("--schoolyear", default=None, help='Schuljahr, z.B. "2026/2027" (Default: laufendes)')
     parser.add_argument(
-        "--mode", choices=["combined", "split"], default="combined",
-        help="combined = 1 PDF mit Seite pro Fach, split = 1 PDF je Fach (Default: combined)",
+        "--mode", choices=["split", "alphabet", "aufgabenfeld"], default="alphabet",
+        help="split = 1 PDF je Fach; alphabet = 1 PDF mit Seite pro Fach, alphabetisch "
+             "sortiert; aufgabenfeld = wie alphabet, aber die Fächer erst nach "
+             "Aufgabenfeld (laut TRG-Fachkonferenzleitungen-Seite, ersatzweise "
+             "TRG-Fächerübersicht) sortiert, dann alphabetisch; Fächer ohne bekanntes "
+             "Aufgabenfeld zuletzt, alphabetisch. Ist keine der beiden Quellen "
+             "erreichbar, wird stattdessen alphabetisch sortiert. (Default: alphabet)",
     )
     parser.add_argument(
         "--subjects", nargs="+", default=None, metavar="FACH",
@@ -1372,6 +1462,30 @@ def main() -> None:
             sys.exit(1)
         subjects = sorted(selected, key=str.casefold)
 
+    if args.mode == "aufgabenfeld":
+        aufgabenfeld_map: dict[str, str] = {}
+        # FKL_URL zuerst, FAECHER_URL als Fallback (existiert FKL_URL nicht mehr
+        # oder enthält ihre Tabelle keine Aufgabenfeld-Zuordnung mehr) — erst
+        # wenn auch das scheitert, wird rein alphabetisch sortiert.
+        for url, fetch in (
+            (FKL_URL, fetch_aufgabenfeld_mapping),
+            (FAECHER_URL, fetch_aufgabenfeld_mapping_from_faecher_page),
+        ):
+            try:
+                aufgabenfeld_map = fetch()
+            except Exception as exc:  # Netzwerk/Parsing-Fehler -> nächste Quelle versuchen
+                print(f"Warnung: Aufgabenfelder konnten nicht von {url} geladen werden ({exc}).", file=sys.stderr)
+                continue
+            if aufgabenfeld_map:
+                break
+        if not aufgabenfeld_map:
+            print(
+                "Warnung: Aufgabenfeld-Zuordnung von keiner Quelle verfügbar "
+                "— Fächer werden stattdessen alphabetisch sortiert.",
+                file=sys.stderr,
+            )
+        subjects = sorted(subjects, key=lambda s: subject_sort_key(s, aufgabenfeld_map))
+
     fkl_map: dict[str, str] = {}
     kollegium_map: dict[str, str] = {}
     if args.confirmation:
@@ -1404,15 +1518,20 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     sy_label = sanitize_filename(schoolyear_id)
 
-    if args.mode == "combined":
-        out_path = out_dir / f"Bücherliste Fächer {sy_label}.pdf"
+    if args.mode != "split":
+        # alphabet/aufgabenfeld unterscheiden sich nur in der Fächer-Reihenfolge
+        # (siehe oben) — der Dateiname bekommt bei aufgabenfeld einen Zusatz,
+        # damit ein Lauf mit --mode alphabet die Datei eines vorherigen Laufs
+        # mit --mode aufgabenfeld (im selben --output-dir) nicht überschreibt.
+        label = "Fächer" if args.mode == "alphabet" else "Fächer (nach Aufgabenfeld)"
+        out_path = out_dir / f"Bücherliste {label} {sy_label}.pdf"
         if args.confirmation:
             # Bestätigungs-Vorlage ist pro Fach an eine reale Person adressiert
             # (Fachkonferenzleitung) — Seitenzahl zählt daher je Fach neu, und
             # die Fußzeile nennt das jeweilige Fach statt pauschal "Fächer".
             write_combined_confirmation_pdf(
                 out_path, subjects, by_subject, schoolyear_id,
-                fkl_map=fkl_map, kollegium_map=kollegium_map, title=f"Bücherliste Fächer {schoolyear_id}",
+                fkl_map=fkl_map, kollegium_map=kollegium_map, title=f"Bücherliste {label} {schoolyear_id}",
                 duplex=effective_duplex,
             )
         else:
@@ -1430,9 +1549,9 @@ def main() -> None:
                         blank_pages=blank_pages,
                     )
                 )
-            footer_center = footer_context("Fächer", schoolyear_id)
+            footer_center = footer_context(label, schoolyear_id)
             write_pdf(
-                out_path, story, title=f"Bücherliste Fächer {schoolyear_id}", footer_center=footer_center,
+                out_path, story, title=f"Bücherliste {label} {schoolyear_id}", footer_center=footer_center,
                 blank_pages=blank_pages,
             )
         print(f"PDF gespeichert: {out_path}")
