@@ -2,9 +2,15 @@
 from __future__ import annotations
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
 from bestand.core import parse_grid, resolve_anchor, strip_hint
-from bestand.core.grid import SKIP_NOT_OFFERED, SKIP_ZUSTAND_NOT_WRITABLE, find_blocks
+from bestand.core.grid import (
+    SKIP_NOT_OFFERED,
+    SKIP_ZUSTAND_NOT_WRITABLE,
+    find_blocks,
+    merge_deckt_ab,
+)
 
 
 def _grid(workbook_path, **kwargs):
@@ -97,3 +103,34 @@ def test_resolve_anchor_returns_top_left(workbook_path):
 def test_find_blocks_ignores_unlabelled_columns(workbook_path):
     ws, grid = _grid(workbook_path)
     assert find_blocks(ws, list(grid.zustand_rows), ws.max_column) == list(grid.blocks)
+
+
+def test_merge_deckt_ab_prueft_alle_vier_grenzen(workbook_path):
+    """Der Ganzzahlvergleich muss dasselbe sagen wie openpyxls ``in``-Operator.
+
+    ``merge_deckt_ab`` ersetzt ``f"{spalte}{zeile}" in merged`` aus
+    Geschwindigkeitsgruenden (Faktor 200, siehe Docstring dort). Diese
+    Gleichwertigkeit ist der einzige Grund, warum der Austausch erlaubt war -
+    also wird sie hier ueber das ganze Blatt geprueft, nicht nur an einer
+    Beispielzelle.
+    """
+    ws, _ = _grid(workbook_path)
+    for merged in ws.merged_cells.ranges:
+        for row in range(1, ws.max_row + 1):
+            for col in range(1, ws.max_column + 1):
+                erwartet = f"{get_column_letter(col)}{row}" in merged
+                assert merge_deckt_ab(merged, row, col) is erwartet, (
+                    f"{merged} / Zeile {row}, Spalte {col}"
+                )
+
+
+def test_merge_deckt_ab_an_den_ecken(workbook_path):
+    """Die Grenzen gehoeren dazu - ein '<' statt '<=' faellt sonst niemandem auf."""
+    ws, _ = _grid(workbook_path)
+    merged = next(m for m in ws.merged_cells.ranges if m.min_row != m.max_row)
+    assert merge_deckt_ab(merged, merged.min_row, merged.min_col)      # oben links
+    assert merge_deckt_ab(merged, merged.max_row, merged.max_col)      # unten rechts
+    assert not merge_deckt_ab(merged, merged.min_row - 1, merged.min_col)
+    assert not merge_deckt_ab(merged, merged.max_row + 1, merged.max_col)
+    assert not merge_deckt_ab(merged, merged.min_row, merged.min_col - 1)
+    assert not merge_deckt_ab(merged, merged.max_row, merged.max_col + 1)
