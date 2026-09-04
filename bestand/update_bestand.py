@@ -29,15 +29,20 @@ _API_ROOT = _ROOT.parent / "ausleihe-api"
 # Installation läuft (Nachfolger-Pfad: nur klonen, nichts installieren).
 if _API_ROOT.is_dir():
     sys.path.insert(0, str(_API_ROOT))
+# Beim Direktaufruf liegt nur ``bestand/`` auf dem Pfad, nicht die Repo-Wurzel;
+# ``bestand.core`` waere sonst nicht importierbar.
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from dotenv import load_dotenv
+
 load_dotenv(_API_ROOT / ".env")
 
+from ausleihe import AusleiheClient, NotFoundError
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 
-from ausleihe import AusleiheClient, NotFoundError
-from ausleihe.inventory_excel import atomic_save_workbook
+from bestand.core import atomic_save_workbook
 
 
 def resolve_anchor(ws, cell_ref: str) -> str:

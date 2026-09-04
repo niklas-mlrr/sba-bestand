@@ -11,16 +11,23 @@ version = "0.1.0"
 description = "Excel-Tooling der Schulbuchausleihe: Bestands-/Nachbestellungsliste und Bücherlisten nach Fach"
 requires-python = ">=3.10"
 dependencies = [
-    # Bestand (update_bestand*.py)
+    # Bestand (update_bestand*.py) und bestand/core/
     "openpyxl>=3.1,<4",
     "isbnlib>=3.10",
     "python-dotenv>=1,<2",
-    # Bücherlisten (generate_booklists.py)
-    "reportlab>=4,<5",
     "requests>=2.31,<3",
     # IServ-API-Client (Geschwister-Repo, siehe [tool.uv.sources])
     "iserv-ausleihe-api",
 ]
+
+# reportlab (und das davon gezogene Pillow) braucht ausschliesslich der
+# PDF-Erzeuger buecherlisten/generate_booklists.py. Als Pflichtabhaengigkeit
+# haette sba-dashboard auf dem Schul-Laptop rund 15 MB Pakete installiert, die
+# es nie importiert - und jede Installation waere an einem fehlenden Pillow-Rad
+# gescheitert. Wer die Buecherlisten-PDFs braucht: `uv sync --extra pdf`
+# bzw. `pip install "sba-bestand[pdf]"`.
+[project.optional-dependencies]
+pdf = ["reportlab>=4,<5"]
 
 [dependency-groups]
 dev = ["ruff>=0.8,<1", "pytest>=8,<9"]

@@ -472,8 +472,12 @@ dependencies = [
     { name = "iserv-ausleihe-api" },
     { name = "openpyxl" },
     { name = "python-dotenv" },
-    { name = "reportlab" },
     { name = "requests" },
+]
+
+[package.optional-dependencies]
+pdf = [
+    { name = "reportlab" },
 ]
 
 [package.dev-dependencies]
@@ -488,9 +492,10 @@ requires-dist = [
     { name = "iserv-ausleihe-api", editable = "../ausleihe-api" },
     { name = "openpyxl", specifier = ">=3.1,<4" },
     { name = "python-dotenv", specifier = ">=1,<2" },
-    { name = "reportlab", specifier = ">=4,<5" },
+    { name = "reportlab", marker = "extra == 'pdf'", specifier = ">=4,<5" },
     { name = "requests", specifier = ">=2.31,<3" },
 ]
+provides-extras = ["pdf"]
 
 [package.metadata.requires-dev]
 dev = [

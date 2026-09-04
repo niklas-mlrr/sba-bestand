@@ -13,8 +13,10 @@ mehreren Jahrgangs-Bücherlisten gleichzeitig auftauchen.
 ## Schnellstart
 
 ```bash
-# einmalig im sba-bestand-Root, falls noch nicht geschehen:
-uv sync
+# einmalig im sba-bestand-Root, falls noch nicht geschehen.
+# --extra pdf ist hier Pflicht: reportlab ist ein Extra und wird nur von
+# diesem Erzeuger gebraucht (siehe ../README.md).
+uv sync --extra pdf
 
 cd buecherlisten
 

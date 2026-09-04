@@ -61,12 +61,20 @@ brechen die Skripte mit einer Meldung zu fehlenden `ISERV_*`-Variablen ab.
 git clone https://github.com/niklas-mlrr/ausleihe-api.git
 git clone https://github.com/niklas-mlrr/sba-bestand.git
 cd sba-bestand
-uv sync            # zieht ausleihe-api als editable-Install mit
+uv sync                 # zieht ausleihe-api als editable-Install mit
+uv sync --extra pdf     # zusätzlich reportlab, nur für die Bücherlisten-PDFs
 ```
 
+**`reportlab` ist ein Extra, keine Pflichtabhängigkeit.** Es wird ausschließlich
+von `buecherlisten/generate_booklists.py` gebraucht. Das Bestands-Tooling und
+`sba-dashboard` importieren es nie und sollen es auf dem Schul-Laptop auch nicht
+installieren müssen — reportlab zieht Pillow nach, und ein fehlendes Pillow-Rad
+hätte dort eine Installation zum Scheitern gebracht, die mit PDFs nichts zu tun
+hat.
+
 Ohne `uv` genügt auch ein einfaches `pip install openpyxl isbnlib python-dotenv
-reportlab requests` — die Skripte finden `ausleihe` dann über einen Fallback auf
-den Geschwister-Ordner.
+requests` (plus `reportlab` für die PDFs) — die Skripte finden `ausleihe` dann
+über einen Fallback auf den Geschwister-Ordner.
 
 ## Benutzung
 

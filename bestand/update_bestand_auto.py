@@ -46,7 +46,6 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(_API_ROOT / ".env")
 
 from ausleihe import AusleiheClient  # noqa: E402
-from ausleihe.inventory_excel import atomic_save_workbook  # noqa: E402
 from openpyxl import load_workbook  # noqa: E402
 
 from bestand.core import (  # noqa: E402
@@ -59,6 +58,7 @@ from bestand.core import (  # noqa: E402
     ConfigError,
     UpdateResult,
     apply_snapshot,
+    atomic_save_workbook,
     fetch_snapshot,
     load_bestellt_counts,
     parse_grid,
