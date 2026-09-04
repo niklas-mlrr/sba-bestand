@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from bestand.core import atomic_save_workbook
+from bestand.core import atomic_save_workbook, excel_io
 
 
 class Workbook:
@@ -70,3 +70,56 @@ def test_zwei_sicherungen_in_derselben_sekunde_ueberschreiben_sich_nicht(tmp_pat
 def test_fehlende_zieldatei_ist_ein_fehler(tmp_path):
     with pytest.raises(FileNotFoundError):
         atomic_save_workbook(Workbook(), tmp_path / "gibt-es-nicht.xlsx")
+
+
+# ── Windows: gleichzeitiger Leser blockiert das Ersetzen ─────────────────────
+
+def test_ersetzen_sitzt_einen_gleichzeitigen_leser_aus(tmp_path, monkeypatch):
+    """Ein kurzer ``PermissionError`` ist unter Windows ein Leser, kein Schreibschutz.
+
+    Dort scheitert ``os.replace``, solange irgendein Handle auf die Zieldatei
+    offen ist. Das Dashboard liest die Mappe bewusst ohne Sperre, ein zweites
+    Fenster kann also genau waehrend des Speicherns lesen. Unter POSIX passiert
+    das nie, deshalb wird es hier nachgestellt.
+    """
+    ziel = tmp_path / "bestand.xlsx"
+    ziel.write_bytes(b"old")
+    echtes_replace = excel_io.os.replace
+    versuche = []
+
+    def zickig(quelle, dest):
+        versuche.append(1)
+        if len(versuche) <= 2:
+            raise PermissionError(5, "Access is denied")
+        return echtes_replace(quelle, dest)
+
+    monkeypatch.setattr(excel_io.os, "replace", zickig)
+    monkeypatch.setattr(excel_io.time, "sleep", lambda _: None)
+
+    atomic_save_workbook(Workbook(), ziel)
+
+    assert ziel.read_bytes() == b"new"
+    assert len(versuche) == 3
+
+
+def test_dauerhafter_permission_error_wird_durchgereicht(tmp_path, monkeypatch):
+    """Haelt der Fehler an, ist die Mappe wirklich belegt - dann muss er hochkommen.
+
+    Das Dashboard macht daraus "Die Datei ist gerade in Excel geoeffnet", und
+    diese Meldung ist dann richtig. Die alte Mappe bleibt unveraendert, und die
+    Nachbardatei wird aufgeraeumt.
+    """
+    ziel = tmp_path / "bestand.xlsx"
+    ziel.write_bytes(b"old")
+
+    def immer(quelle, dest):
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(excel_io.os, "replace", immer)
+    monkeypatch.setattr(excel_io.time, "sleep", lambda _: None)
+
+    with pytest.raises(PermissionError):
+        atomic_save_workbook(Workbook(), ziel)
+
+    assert ziel.read_bytes() == b"old"
+    assert list(tmp_path.glob(".bestand.*")) == []

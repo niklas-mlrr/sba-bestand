@@ -25,9 +25,55 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+
+# Wie oft und wie lange ``os.replace`` wiederholt wird, wenn Windows die
+# Zieldatei gerade als geoeffnet meldet; zusammen gut eine halbe Sekunde
+# (10+20+40+80+160+320 ms).
+_ERSETZ_VERSUCHE = 7
+_ERSETZ_WARTE_START = 0.01
+
+
+def _ersetze_mit_wiederholung(quelle: str, ziel: Path) -> None:
+    """``os.replace``, das einen gleichzeitigen *Leser* unter Windows aussitzt.
+
+    Unter POSIX ersetzt ``rename`` eine Datei auch dann, wenn sie jemand
+    geoeffnet hat. Windows verweigert das mit ``PermissionError``
+    (``WinError 5``), solange irgendein Handle auf die Zieldatei offen ist -
+    und Python oeffnet ohne ``FILE_SHARE_DELETE``, ein lesendes ``open()``
+    genuegt also.
+
+    Das trifft hier den Fall, der auf dem Schul-Laptop am ehesten vorkommt:
+    das Dashboard laedt die Mappe zum *Lesen* bewusst **ohne** Sperre (damit
+    ein Leser nie auf einen Schreiber warten muss), waehrend ein zweites
+    Fenster gerade speichert. ``load_workbook`` haelt die Datei fuer die Dauer
+    des Lesens offen; faellt das Ersetzen genau hinein, scheitert das
+    Speichern. Der Aufrufer im Dashboard uebersetzt jeden
+    ``PermissionError`` in "Die Datei ist gerade in Excel geoeffnet" - eine
+    Meldung, die dann schlicht falsch waere, weil niemand Excel offen hat.
+
+    Ein Leser haelt die Mappe nur fuer die Dauer eines ``load_workbook``.
+    Kurzes Wiederholen loest den Konflikt deshalb, ohne irgendwo zu sperren.
+    Haelt der Fehler an, ist es *wirklich* Excel (oder ein Schreibschutz) -
+    dann fliegt er weiter und die Meldung stimmt wieder.
+
+    Gleiche Ueberlegung und gleiche Werte wie in
+    ``sba-dashboard/app/cache.py``; dort fuer den Sidecar-Cache, hier fuer die
+    Mappe selbst. Bewusst doppelt statt ueber die Repo-Grenze importiert.
+    """
+    warte = _ERSETZ_WARTE_START
+    for versuch in range(_ERSETZ_VERSUCHE):
+        try:
+            os.replace(quelle, ziel)
+            return
+        except PermissionError:
+            if versuch == _ERSETZ_VERSUCHE - 1:
+                raise
+            time.sleep(warte)
+            warte *= 2
 
 
 def atomic_save_workbook(
@@ -65,7 +111,7 @@ def atomic_save_workbook(
         with open(tmp_name, "r+b") as handle:
             os.fsync(handle.fileno())
         shutil.copymode(destination, tmp_name)
-        os.replace(tmp_name, destination)
+        _ersetze_mit_wiederholung(tmp_name, destination)
     except Exception:
         try:
             os.unlink(tmp_name)
