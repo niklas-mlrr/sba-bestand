@@ -16,3 +16,6 @@ __pycache__/
 
 # Recoverable local copies written by the inventory commands.
 bestand/backups/
+
+# setuptools-Metadaten des editable-Installs
+*.egg-info/

@@ -1,0 +1,59 @@
+Verbinde mit IServ (beispiel-schule.de)...
+Schuljahr: 2026/2027
+Excel: Bestand-Test.xlsx  |  Blatt: Bestand- und Nachbestellung
+Lade Bücherlisten...
+Lade Anmeldungen...
+Lade Serien-Daten...
+
+Analysiere Excel-Struktur...
+
+  Lade Bücherliste Jahrgang 5...
+  Lade Bücherliste Jahrgang 6...
+  Lade Bücherliste Jahrgang 7...
+  Lade Bücherliste Jahrgang 12...
+
+12 Fach/Jahrgang-Kombination(en) ohne Buch übersprungen:
+  - Sp.J/Zeile 3: Kein Buch-Match für Fach 'Latein'.
+  - Sp.K/Zeile 3: Kein Buch-Match für Fach 'Latein'.
+  - Sp.L/Zeile 3: Kein Buch-Match für Fach 'Latein'.
+  - Sp.J/Zeile 4: Kein Buch-Match für Fach 'Latein'.
+  - Sp.K/Zeile 4: Kein Buch-Match für Fach 'Latein'.
+  - Sp.L/Zeile 4: Kein Buch-Match für Fach 'Latein'.
+  - Sp.J/Zeile 5: Kein Buch-Match für Fach 'Latein'.
+  - Sp.K/Zeile 5: Kein Buch-Match für Fach 'Latein'.
+  - Sp.L/Zeile 5: Kein Buch-Match für Fach 'Latein'.
+  - Sp.J/Zeile 8: Kein Buch-Match für Fach 'Latein'.
+  - Sp.K/Zeile 8: Kein Buch-Match für Fach 'Latein'.
+  - Sp.L/Zeile 8: Kein Buch-Match für Fach 'Latein'.
+
+4 Bücher mit Nachbestellbedarf:
+  Jg. 5 [Deutsch] +5 → 15 Stk.  Deutschbuch 5  [978-3-06-205222-4]
+  Jg.12 [Deutsch] +5 → 10 Stk.  Deutschbuch Oberstufe  [978-3-14-028268-0]
+  Jg. 5 [Erdkunde] +5 → 7 Stk.  Terra 5/6  [978-3-12-105207-3]
+  Jg.12 [Erdkunde (eA)] +5 → 13 Stk.  Terra Erhöhtes Anforderungsniveau  [978-3-507-53305-9]
+
+-- DRY RUN: keine Datei wird gespeichert --
+23 Zelle(n) würden aktualisiert:
+  B3: None -> 50  [Deutsch Jg.5, Deutschbuch 5, Angemeldet]
+  C3: None -> 40  [Deutsch Jg.5, Deutschbuch 5, Bestand]
+  D3: None -> None  [Deutsch Jg.5, Deutschbuch 5, Bestellt]
+  F3: None -> 48  [Erdkunde Jg.5, Terra 5/6, Angemeldet]
+  G3: None -> 60  [Erdkunde Jg.5, Terra 5/6, Bestand]
+  H3: None -> 30  [Erdkunde Jg.5, Terra 5/6, Bestellt]
+  B4: None -> 45  [Deutsch Jg.6, Deutschbuch 6, Angemeldet]
+  C4: None -> 30  [Deutsch Jg.6, Deutschbuch 6, Bestand]
+  D4: None -> 15  [Deutsch Jg.6, Deutschbuch 6, Bestellt]
+  F4: None -> 44  [Erdkunde Jg.6, Terra 5/6, Angemeldet]
+  B5: None -> 52  [Deutsch Jg.7, Deutschbuch 7, Angemeldet]
+  C5: None -> 90  [Deutsch Jg.7, Deutschbuch 7, Bestand]
+  D5: None -> None  [Deutsch Jg.7, Deutschbuch 7, Bestellt]
+  F5: None -> 51  [Erdkunde Jg.7, Terra 7/8, Angemeldet]
+  G5: None -> 55  [Erdkunde Jg.7, Terra 7/8, Bestand]
+  H5: None -> None  [Erdkunde Jg.7, Terra 7/8, Bestellt]
+  B8: None -> 25  [Deutsch Jg.12, Deutschbuch Oberstufe, Angemeldet]
+  C8: None -> 20  [Deutsch Jg.12, Deutschbuch Oberstufe, Bestand]
+  D8: None -> None  [Deutsch Jg.12, Deutschbuch Oberstufe, Bestellt]
+  F8: None -> 18  [Erdkunde (eA) Jg.12, Terra Erhöhtes Anforderungsniveau, Angemeldet]
+  G8: None -> 10  [Erdkunde (eA) Jg.12, Terra Erhöhtes Anforderungsniveau, Bestand]
+  H8: None -> None  [Erdkunde (eA) Jg.12, Terra Erhöhtes Anforderungsniveau, Bestellt]
+  B10: None -> <STAND>  [Stand/Abfragezeitpunkt]

@@ -1,14 +1,44 @@
 # sba-bestand — Excel-Tooling der Schulbuchausleihe
 
-Zwei Werkzeuge, die die IServ-Ausleihe-API **nur lesend** (GET) abfragen und
-daraus Dateien erzeugen:
+Eine Bibliothek und zwei Werkzeuge, die die IServ-Ausleihe-API **nur lesend**
+(GET) abfragen und daraus Dateien erzeugen:
 
 | Ordner | Werkzeug | Ergebnis |
 |--------|----------|----------|
-| `bestand/` | `update_bestand_auto.py` | trägt Bestands-/Anmeldezahlen in die Excel-Bestands- und Nachbestellungsliste ein |
+| `bestand/core/` | Bibliothek | Excel-Raster lesen, IServ-Snapshot holen, Zahlen eintragen — netzfrei testbar |
+| `bestand/` | `update_bestand_auto.py` | Kommandozeilen-Schale um `core/`: trägt Bestands-/Anmeldezahlen in die Excel-Liste ein |
 | `buecherlisten/` | `generate_booklists.py` | erzeugt die Bücherlisten-PDFs je Fach/Jahrgang |
 
 Es wird **nie** nach IServ geschrieben.
+
+## `bestand/core/` — die Bibliothek
+
+Seit 2026-09-04 steckt die Logik nicht mehr im Skript, sondern in einem Paket.
+Das war nötig, damit [`sba-dashboard`](https://github.com/niklas-mlrr/sba-dashboard)
+dieselbe Excel-Behandlung benutzt, statt sie ein zweites Mal nachzubauen.
+
+| Modul | Inhalt |
+|-------|--------|
+| `core/config.py` | `config.json` laden und prüfen |
+| `core/grid.py` | Excel-Struktur: Fachblöcke, Mehrjahresbänder, „nicht angeboten"-Sperrflächen |
+| `core/iserv.py` | `Snapshot` aus IServ — der Client wird **injiziert**, nie selbst gebaut |
+| `core/update.py` | Snapshot anwenden, Blatt „zu Bestellen" neu aufbauen |
+| `core/testing.py` | synthetisches Prüf-Workbook + Fake-IServ, von beiden Repos benutzt |
+
+Nichts davon liest `os.environ`, lädt eine `.env`, parst Argumente oder schreibt
+nach stdout. Die Tests laufen ohne Netz und ohne die echte Mappe:
+
+```bash
+uv sync --all-groups
+uv run pytest
+```
+
+`tests/test_cli_golden.py` friert die Konsolenausgabe von
+`update_bestand_auto.py` ein — der Refactor hat sie zeichengleich gelassen.
+
+Die Struktur-Befunde, die den Entwurf bestimmen (keine Bezahlt-Spalte,
+Formelspalten, Merge-Topologie, Sperrflächen), stehen in
+[`sba-dashboard/docs/architektur.md`](https://github.com/niklas-mlrr/sba-dashboard/blob/main/docs/architektur.md).
 
 ## Voraussetzung: Geschwister-Layout
 
