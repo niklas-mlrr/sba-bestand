@@ -48,6 +48,10 @@ def run_cli(tmp_path: Path, extra_args: list[str], *, skip_blocked: bool) -> tup
     text = buffer.getvalue()
     text = _TIMESTAMP.sub("<STAND>", text)
     text = text.replace(str(xlsx), "<XLSX>").replace(str(tmp_path), "<TMP>")
+    # Unter Windows bleiben im verbleibenden Rest der ausgegebenen Pfade
+    # (z.B. "backups/") Backslashes stehen - normalisieren, damit der Vergleich
+    # plattformübergreifend gilt.
+    text = text.replace(os.sep, "/")
     text = _BACKUP_STAMP.sub("Bestand-Test.<STAMP>.xlsx", text)
     return text, code, xlsx
 
