@@ -5,7 +5,7 @@ schreibt nach stdout. Die CLI (``update_bestand_auto.py``) und das Dashboard
 (``sba-dashboard``) sind zwei duenne Schalen um dieselben Funktionen.
 """
 from .config import BestandConfig, ConfigError
-from .excel_io import atomic_save_workbook
+from .excel_io import atomic_save_workbook, replace_with_retry
 from .grid import (
     Grid,
     GridCell,
@@ -48,7 +48,7 @@ from .update import (
 
 __all__ = [
     "BestandConfig", "ConfigError",
-    "atomic_save_workbook",
+    "atomic_save_workbook", "replace_with_retry",
     "Grid", "GridCell", "GridEntry", "GridSlot",
     "classify_row", "extract_grade", "find_blocks", "find_fach_for_col",
     "find_zustand_for_col", "parse_grid", "resolve_anchor", "strip_hint",

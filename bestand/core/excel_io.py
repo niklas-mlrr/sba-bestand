@@ -37,7 +37,7 @@ _ERSETZ_VERSUCHE = 7
 _ERSETZ_WARTE_START = 0.01
 
 
-def _ersetze_mit_wiederholung(quelle: str, ziel: Path) -> None:
+def replace_with_retry(quelle: str, ziel: Path) -> None:
     """``os.replace``, das einen gleichzeitigen *Leser* unter Windows aussitzt.
 
     Unter POSIX ersetzt ``rename`` eine Datei auch dann, wenn sie jemand
@@ -60,9 +60,14 @@ def _ersetze_mit_wiederholung(quelle: str, ziel: Path) -> None:
     Haelt der Fehler an, ist es *wirklich* Excel (oder ein Schreibschutz) -
     dann fliegt er weiter und die Meldung stimmt wieder.
 
-    Gleiche Ueberlegung und gleiche Werte wie in
-    ``sba-dashboard/app/cache.py``; dort fuer den Sidecar-Cache, hier fuer die
-    Mappe selbst. Bewusst doppelt statt ueber die Repo-Grenze importiert.
+    Bis 2026-09-04 gab es dieselbe Funktion ein zweites Mal, fast wortgleich,
+    in ``sba-dashboard/app/cache.py`` - fuer den Sidecar-Cache statt fuer die
+    Mappe. Zwei Kopien derselben sieben Zeilen Wiederholungslogik heisst zwei
+    Stellen, an denen jemand die Wartezeit oder die Versuchszahl aendern
+    kann, ohne die andere zu bemerken. Diese Funktion ist deshalb jetzt
+    public (englischer Name, Export aus ``bestand/core/__init__.py``) und
+    wird vom Dashboard importiert statt erneut abgeschrieben - siehe
+    ``sba-dashboard/app/dateien.py``.
     """
     warte = _ERSETZ_WARTE_START
     for versuch in range(_ERSETZ_VERSUCHE):
@@ -111,7 +116,7 @@ def atomic_save_workbook(
         with open(tmp_name, "r+b") as handle:
             os.fsync(handle.fileno())
         shutil.copymode(destination, tmp_name)
-        _ersetze_mit_wiederholung(tmp_name, destination)
+        replace_with_retry(tmp_name, destination)
     except Exception:
         try:
             os.unlink(tmp_name)
