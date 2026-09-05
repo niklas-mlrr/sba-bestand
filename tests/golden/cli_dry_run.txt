@@ -33,10 +33,9 @@ Analysiere Excel-Struktur...
   Jg.12 [Erdkunde (eA)] +5 → 13 Stk.  Terra Erhöhtes Anforderungsniveau  [978-3-507-53305-9]
 
 -- DRY RUN: keine Datei wird gespeichert --
-23 Zelle(n) würden aktualisiert:
+18 Zelle(n) würden aktualisiert:
   B3: None -> 50  [Deutsch Jg.5, Deutschbuch 5, Angemeldet]
   C3: None -> 40  [Deutsch Jg.5, Deutschbuch 5, Bestand]
-  D3: None -> None  [Deutsch Jg.5, Deutschbuch 5, Bestellt]
   F3: None -> 48  [Erdkunde Jg.5, Terra 5/6, Angemeldet]
   G3: None -> 60  [Erdkunde Jg.5, Terra 5/6, Bestand]
   H3: None -> 30  [Erdkunde Jg.5, Terra 5/6, Bestellt]
@@ -46,14 +45,10 @@ Analysiere Excel-Struktur...
   F4: None -> 44  [Erdkunde Jg.6, Terra 5/6, Angemeldet]
   B5: None -> 52  [Deutsch Jg.7, Deutschbuch 7, Angemeldet]
   C5: None -> 90  [Deutsch Jg.7, Deutschbuch 7, Bestand]
-  D5: None -> None  [Deutsch Jg.7, Deutschbuch 7, Bestellt]
   F5: None -> 51  [Erdkunde Jg.7, Terra 7/8, Angemeldet]
   G5: None -> 55  [Erdkunde Jg.7, Terra 7/8, Bestand]
-  H5: None -> None  [Erdkunde Jg.7, Terra 7/8, Bestellt]
   B8: None -> 25  [Deutsch Jg.12, Deutschbuch Oberstufe, Angemeldet]
   C8: None -> 20  [Deutsch Jg.12, Deutschbuch Oberstufe, Bestand]
-  D8: None -> None  [Deutsch Jg.12, Deutschbuch Oberstufe, Bestellt]
   F8: None -> 18  [Erdkunde (eA) Jg.12, Terra Erhöhtes Anforderungsniveau, Angemeldet]
   G8: None -> 10  [Erdkunde (eA) Jg.12, Terra Erhöhtes Anforderungsniveau, Bestand]
-  H8: None -> None  [Erdkunde (eA) Jg.12, Terra Erhöhtes Anforderungsniveau, Bestellt]
   B10: None -> <STAND>  [Stand/Abfragezeitpunkt]

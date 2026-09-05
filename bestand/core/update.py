@@ -122,6 +122,23 @@ def load_bestellt_counts(ws_bestellt: Blatt) -> tuple[dict[str, int], list[str]]
     return counts, errors
 
 
+def _ganzzahl(wert: Any) -> int | None:
+    """Ein vorhandener Zellwert als ganze Zahl - alles andere zaehlt als leer.
+
+    Gebraucht fuer die "Bestellt"-Zelle, die :func:`apply_snapshot` stehen
+    laesst: ihr Wert geht danach in ``zu_bestellen_data`` ein, und
+    :func:`compute_zu_bestellen_rows` rechnet dort mit ``or 0``. Ein Text oder
+    ein Formelrest wuerde diese Rechnung mit einem TypeError anhalten, ein
+    ``bool`` waere stillschweigend 0 oder 1 - beides faengt diese Funktion ab.
+    """
+    if wert is None or isinstance(wert, (str, bool)):
+        return None
+    try:
+        return int(wert)
+    except (TypeError, ValueError):
+        return None
+
+
 def _entry_key(grid: Grid, cell: GridCell) -> str | None:
     for index, (start, end) in enumerate(grid.blocks):
         if start <= cell.col <= end:
@@ -145,6 +162,12 @@ def apply_snapshot(
     ``result`` kann eine vorbefuellte Instanz sein (z.B. mit den Diagnosen aus
     :func:`load_bestellt_counts`), damit deren Reihenfolge erhalten bleibt.
     Bei nicht leeren ``diagnostics`` darf der Aufrufer **nicht** speichern.
+
+    Drei der vier Spalten kommen aus IServ (Angemeldet, Bezahlt, Bestand) und
+    werden bedingungslos ueberschrieben. **Bestellt nicht**: es kommt aus dem
+    Blatt ``bestellt`` derselben Mappe und wird nur dort geschrieben, wo die
+    ISBN in ``bestellt_counts`` steht. Fehlt sie, bleibt die Zelle unberuehrt -
+    Begruendung am Zweig selbst.
     """
     def _dbg(msg: str) -> None:
         if debug is not None:
@@ -264,6 +287,9 @@ def apply_snapshot(
             processed_enrollment.add(enr_key)
 
         lookup = (cell.grade, isbn)
+        # "Bestellt" ist die einzige Spalte, die auch von Hand gepflegt wird -
+        # deshalb kann sie hier ausgelassen werden, siehe unten.
+        behalten = False
         if zustand == "angemeldet":
             new_val: int | None = snapshot.enrolled.get(lookup, 0)
         elif zustand == "bezahlt":
@@ -272,7 +298,21 @@ def apply_snapshot(
             new_val = bestand_counts.get(isbn, 0)
         else:  # bestellt
             isbn_norm = isbn.replace("-", "")
-            new_val = counts.get(isbn_norm) if isbn_norm in counts else None
+            if isbn_norm in counts:
+                new_val = counts[isbn_norm]
+            else:
+                # Bis 2026-09-05 stand hier None, die Zelle wurde also GELEERT.
+                # Das war der einzige Ort, an dem ein Abruf eine Eingabe von
+                # Hand vernichtete: "Bestellt" kommt nicht aus IServ, sondern
+                # aus dem Blatt 'bestellt' derselben Mappe, und wer eine
+                # Bestellung dort (noch) nicht eingetragen hat, aber die Zahl
+                # schon im Raster stehen hatte, fand sie nach dem Abruf leer
+                # vor. Ein fehlender Eintrag im Blatt heisst "ich weiss nichts
+                # darueber", nicht "es ist nichts bestellt" - deshalb bleibt
+                # die Zelle jetzt stehen, und der vorhandene Wert geht
+                # unveraendert in die Bedarfsrechnung ein.
+                behalten = True
+                new_val = _ganzzahl(ws[anchor_ref].value)
 
         entry = res.zu_bestellen_data.setdefault(isbn, {
             "angemeldet": 0,
@@ -298,6 +338,13 @@ def apply_snapshot(
                 f"paid={snapshot.paid.get(lookup, '–')}, bestand={bestand_counts.get(isbn, '–')}, "
                 f"bestellt_sheet={counts.get(isbn_norm, '–')}, new_val={new_val}"
             )
+
+        if behalten:
+            # Nichts schreiben und nichts melden: eine Zelle, die der Abruf
+            # bewusst nicht anfasst, ist keine Aenderung. Stuende sie trotzdem
+            # in res.changes, meldete die Zusammenfassung sie als "aktualisiert"
+            # und das Dashboard hoebe sie hinterher als frisch geaendert hervor.
+            continue
 
         old_val = ws[anchor_ref].value
         ws[anchor_ref].value = new_val

@@ -52,11 +52,52 @@ def test_angemeldet_stays_per_grade_in_a_band(prepared):
     assert (ws["F3"].value, ws["F4"].value) == (48, 44)
 
 
-def test_bestellt_is_none_when_isbn_absent(prepared):
-    """Fehlt die ISBN im Blatt 'bestellt', bleibt die Zelle leer - keine 0."""
-    _, ws, _, _, _ = _apply(prepared)
+def test_bestellt_bleibt_stehen_wenn_die_isbn_im_blatt_fehlt(prepared):
+    """Fehlt die ISBN im Blatt 'bestellt', wird die Zelle NICHT angefasst.
+
+    "Bestellt" ist die einzige Spalte, die auch von Hand gepflegt wird - und
+    bis 2026-09-05 leerte der Abruf sie genau dann, wenn im Blatt 'bestellt'
+    nichts zu der ISBN stand. Ein fehlender Eintrag dort heisst aber
+    "unbekannt", nicht "nichts bestellt".
+    """
+    _, ws, _, _, _, _, _ = prepared
+    ws["D5"] = 7    # von Hand eingetragen, ISBN steht nicht im Blatt 'bestellt'
+    _apply(prepared)
     assert ws["D4"].value == 15    # 10 + 5 aus zwei Bestellzeilen
-    assert ws["D5"].value is None
+    assert ws["D5"].value == 7
+
+
+def test_ausgelassene_bestellt_zelle_ist_keine_aenderung(prepared):
+    """Was nicht geschrieben wird, darf auch nicht als 'aktualisiert' zaehlen."""
+    _, _, _, _, result = _apply(prepared)
+    bestellt_refs = {c.ref for c in result.changes if c.note.endswith("Bestellt")}
+    assert "D4" in bestellt_refs      # steht im Blatt 'bestellt' -> geschrieben
+    assert "D5" not in bestellt_refs  # fehlt dort -> ausgelassen
+
+
+def test_ausgelassene_bestellt_zelle_geht_trotzdem_in_den_bedarf_ein(prepared):
+    """Der stehen gelassene Wert wird gerechnet, nicht ignoriert.
+
+    Sonst waere Angemeldet - Bestand - Bestellt zu gross und das Blatt
+    'zu Bestellen' bestellte dieselben Buecher ein zweites Mal.
+    """
+    _, ws, _, _, _, _, _ = prepared
+    ws["D5"] = 7
+    _, _, _, _, result = _apply(prepared)
+    eintrag = next(e for e in result.zu_bestellen_data.values()
+                   if e["title"] == "Deutschbuch 7")
+    assert eintrag["bestellt"] == 7
+
+
+def test_text_in_der_bestellt_zelle_haelt_die_bedarfsrechnung_nicht_an(prepared):
+    """Ein Formelrest oder eine Notiz zaehlt als leer, statt einen TypeError zu werfen."""
+    _, ws, _, _, _, _, _ = prepared
+    ws["D5"] = "noch offen"
+    _, _, _, _, result = _apply(prepared)
+    eintrag = next(e for e in result.zu_bestellen_data.values()
+                   if e["title"] == "Deutschbuch 7")
+    assert eintrag["bestellt"] is None
+    assert ws["D5"].value == "noch offen"
 
 
 def test_formula_cells_are_untouched(prepared):
