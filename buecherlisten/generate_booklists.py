@@ -81,16 +81,11 @@ Verwendung:
 from __future__ import annotations
 
 import argparse
-import difflib
-import html
 import io
-import re
 import sys
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-
-import requests
 
 _HERE = Path(__file__).parent
 _ROOT = _HERE.parent
@@ -106,12 +101,37 @@ _API_ROOT = _ROOT.parent / "ausleihe-api"
 if _API_ROOT.is_dir():
     sys.path.insert(0, str(_API_ROOT))
 
-from dotenv import load_dotenv
+# Dieses Skript liegt unterhalb des Repo-Roots (buecherlisten/) und importiert
+# ``buecherlisten.trg_web`` als absoluten Paketimport (mirroring dessen, was
+# tests/conftest.py über den Repo-Root tut) — ohne diesen Eintrag würde
+# ``from buecherlisten.trg_web import ...`` beim Direktaufruf
+# (``python3 generate_booklists.py``) mit ModuleNotFoundError scheitern, weil
+# nur der buecherlisten/-Ordner selbst, nicht dessen Elternordner auf
+# sys.path steht.
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(_API_ROOT / ".env")
 
 from ausleihe import AusleiheClient  # noqa: E402
 from ausleihe.exceptions import NotFoundError  # noqa: E402
+
+# Die drei TRG-Website-Scraper stehen seit 2026-09-05 in buecherlisten/trg_web.py
+# (netzlos testbar, siehe Modul-Docstring dort) — hier nur noch importiert.
+from buecherlisten.trg_web import (  # noqa: E402
+    FAECHER_URL,
+    FKL_URL,
+    KOLLEGIUM_URL,
+    fetch_aufgabenfeld_mapping,
+    fetch_aufgabenfeld_mapping_from_faecher_page,
+    fetch_fkl_mapping,
+    fetch_kollegium_kuerzel_mapping,
+    find_kollegium_kuerzel,
+    find_mapped_value,
+    subject_sort_key,
+)
 
 try:
     import isbnlib as _isbnlib
@@ -286,184 +306,6 @@ def fmt_grades(grades: tuple[int, ...]) -> str:
     return ", ".join(str(g) for g in grades)
 
 
-# Öffentliche TRG-Website (kein IServ, keine Produktionsdaten) — liefert die
-# Fach->Name-Zuordnung der Fachkonferenzleitungen für die Kopfzeile bei
-# --confirmation, sowie (als primäre Quelle) die Fach->Aufgabenfeld-Zuordnung
-# für --mode aufgabenfeld. Nur GET, rein lesend.
-FKL_URL = "https://trg-osterode.de/wir-am-trg/kollegium/fachkonferenzleitungen/"
-
-# Fallback-Quelle für die Fach->Aufgabenfeld-Zuordnung (--mode aufgabenfeld),
-# falls FKL_URL nicht (mehr) erreichbar ist oder deren Tabelle keine
-# Aufgabenfeld-Zuordnung mehr enthält. Nur GET, rein lesend.
-FAECHER_URL = "https://trg-osterode.de/unterricht-und-ganztagsangebot/faecher/"
-
-
-def _clean_cell(raw_html: str) -> str:
-    text = re.sub(r"<[^>]+>", " ", raw_html)
-    text = html.unescape(text).replace("\xa0", " ")
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def fetch_fkl_mapping(*, timeout: float = 10.0) -> dict[str, str]:
-    """Fach -> Name der Fachkonferenzleitung, live von der TRG-Website gelesen.
-
-    Die Seite enthält eine einzelne HTML-Tabelle (Fach, Name, Amtsbezeichnung)
-    mit leeren Trenn-/Überschriftszeilen ("Aufgabenfeld A/B/C") dazwischen —
-    die werden hier übersprungen (leere oder fehlende Zellen).
-    """
-    resp = requests.get(FKL_URL, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
-    resp.raise_for_status()
-    table_match = re.search(r"<table>(.*?)</table>", resp.text, re.S)
-    if not table_match:
-        return {}
-    mapping: dict[str, str] = {}
-    for row in re.findall(r"<tr>(.*?)</tr>", table_match.group(1), re.S):
-        cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
-        if len(cells) < 2:
-            continue
-        subject, name = _clean_cell(cells[0]), _clean_cell(cells[1])
-        if subject and name:
-            mapping[subject] = name
-    return mapping
-
-
-def find_mapped_value(mapping: dict[str, str], subject: str) -> str | None:
-    """Wert zum Fach (Name oder Aufgabenfeld, je nach übergebener Zuordnung) —
-    exakter Treffer zuerst, sonst Präfix-Abgleich in beide Richtungen
-    (Ausleihe-API kennt z.B. nur "Politik", die Website führt
-    "Politik-Wirtschaft")."""
-    if not mapping:
-        return None
-    cf = subject.casefold()
-    for key, name in mapping.items():
-        if key.casefold() == cf:
-            return name
-    for key, name in mapping.items():
-        key_cf = key.casefold()
-        if key_cf.startswith(cf) or cf.startswith(key_cf):
-            return name
-    return None
-
-
-def fetch_aufgabenfeld_mapping(*, timeout: float = 10.0) -> dict[str, str]:
-    """Fach -> Aufgabenfeld ("Aufgabenfeld A"/"B"/"C"), von derselben
-    Fachkonferenzleitungen-Tabelle wie fetch_fkl_mapping() gelesen.
-
-    Die Tabelle gliedert die Fächer durch eigene Überschriftszeilen
-    ("Aufgabenfeld A" in der ersten Spalte, restliche Spalten leer), gefolgt
-    von den Fachzeilen dieses Aufgabenfelds bis zur nächsten Überschrift.
-    """
-    resp = requests.get(FKL_URL, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
-    resp.raise_for_status()
-    table_match = re.search(r"<table>(.*?)</table>", resp.text, re.S)
-    if not table_match:
-        return {}
-    mapping: dict[str, str] = {}
-    current_field: str | None = None
-    for row in re.findall(r"<tr>(.*?)</tr>", table_match.group(1), re.S):
-        cells = [_clean_cell(c) for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
-        if not cells or not cells[0]:
-            continue
-        if re.match(r"Aufgabenfeld\s+\S+", cells[0]) and not any(cells[1:]):
-            current_field = cells[0]
-            continue
-        if current_field is not None:
-            mapping[cells[0]] = current_field
-    return mapping
-
-
-def fetch_aufgabenfeld_mapping_from_faecher_page(*, timeout: float = 10.0) -> dict[str, str]:
-    """Fallback für fetch_aufgabenfeld_mapping(): die TRG-Fächerübersichtsseite
-    (FAECHER_URL) listet die Aufgabenfelder als drei Tabellenspalten (Kopfzeile
-    "Aufgabenfeld A"/"B"/"C", darunter je Spalte die zugehörigen Fächer,
-    unterschiedlich viele Zeilen pro Spalte — kürzere Spalten haben leere
-    Zellen in den überzähligen Zeilen)."""
-    resp = requests.get(FAECHER_URL, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
-    resp.raise_for_status()
-    table_match = re.search(r"<table[^>]*>(.*?)</table>", resp.text, re.S)
-    if not table_match:
-        return {}
-    rows = re.findall(r"<tr>(.*?)</tr>", table_match.group(1), re.S)
-    if not rows:
-        return {}
-    headers = [_clean_cell(c) for c in re.findall(r"<td[^>]*>(.*?)</td>", rows[0], re.S)]
-    mapping: dict[str, str] = {}
-    for row in rows[1:]:
-        cells = [_clean_cell(c) for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
-        for i, subject in enumerate(cells):
-            if subject and i < len(headers) and headers[i].startswith("Aufgabenfeld"):
-                mapping[subject] = headers[i]
-    return mapping
-
-
-def subject_sort_key(subject: str, aufgabenfeld_map: dict[str, str]) -> tuple[int, str, str]:
-    """Sortierschlüssel für --mode aufgabenfeld: Fächer mit bekanntem
-    Aufgabenfeld zuerst (gruppiert und alphabetisch je Feld), unbekannte
-    Fächer danach, alphabetisch. Bei leerer `aufgabenfeld_map` (keine der
-    Quellen erreichbar / kein Aufgabenfeld dort gefunden) landet jedes Fach in
-    der zweiten Gruppe — das Ergebnis ist dann rein alphabetisch, wie
-    gefordert."""
-    field = find_mapped_value(aufgabenfeld_map, subject)
-    if field is None:
-        return (1, "", subject.casefold())
-    return (0, field, subject.casefold())
-
-
-# Kollegiumsseite: Name -> persönliches Lehrerkürzel (Spalte "Kürzel", z.B.
-# "Mk" für Meike Menkens) — nicht zu verwechseln mit den Fach-Kürzeln in der
-# "Fächer"-Spalte derselben Tabelle.
-KOLLEGIUM_URL = "https://trg-osterode.de/wir-am-trg/kollegium/"
-
-
-def fetch_kollegium_kuerzel_mapping(*, timeout: float = 10.0) -> dict[str, str]:
-    """Name -> Lehrerkürzel, live von der TRG-Kollegiumsseite gelesen
-    (Tabellenspalten: Name, Kürzel, Fächer, Amtsbezeichnung)."""
-    resp = requests.get(KOLLEGIUM_URL, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
-    resp.raise_for_status()
-    table_match = re.search(r"<table[^>]*>(.*?)</table>", resp.text, re.S)
-    if not table_match:
-        return {}
-    mapping: dict[str, str] = {}
-    for row in re.findall(r"<tr>(.*?)</tr>", table_match.group(1), re.S):
-        cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
-        if len(cells) < 2:
-            continue
-        name, kuerzel = _clean_cell(cells[0]), _clean_cell(cells[1])
-        if name and kuerzel and name != "Name":  # Kopfzeile der Tabelle überspringen
-            mapping[name] = kuerzel
-    return mapping
-
-
-def _normalize_person_name(name: str) -> str:
-    return re.sub(r"[\s-]+", " ", name).strip().casefold()
-
-
-def find_kollegium_kuerzel(mapping: dict[str, str], person_name: str | None) -> str | None:
-    """Lehrerkürzel zu einem von find_fkl_name() gelieferten Namen — exakter
-    Treffer, sonst Namensabgleich ohne Bindestrich-/Leerzeichen-Unterschiede
-    (die beiden TRG-Seiten schreiben Namen nicht immer identisch)."""
-    if not person_name or not mapping:
-        return None
-    if person_name in mapping:
-        return mapping[person_name]
-    target = _normalize_person_name(person_name)
-    for name, abbrev in mapping.items():
-        if _normalize_person_name(name) == target:
-            return abbrev
-    # Fuzzy-Fallback: die beiden TRG-Seiten schreiben denselben Namen nicht
-    # immer identisch (beobachtet 2026-08-19: FKL-Seite "Kirscht-Nörthmann"
-    # vs. Kollegiumsseite "Kirscht Nörthemann") — bei sehr hoher Ähnlichkeit
-    # trotzdem zuordnen, statt das Kürzel ganz wegzulassen.
-    best_name, best_ratio = None, 0.0
-    for name in mapping:
-        ratio = difflib.SequenceMatcher(None, _normalize_person_name(name), target).ratio()
-        if ratio > best_ratio:
-            best_name, best_ratio = name, ratio
-    if best_name is not None and best_ratio >= 0.85:
-        return mapping[best_name]
-    return None
-
-
 def collect_entries(client: AusleiheClient, schoolyear_id: str) -> dict[tuple[str, str], dict]:
     """Alle Bücherlisten-Items eines Schuljahrs, gruppiert nach (Fach, ISBN).
 
@@ -570,7 +412,9 @@ def _wrap_lines(text: str, width: float, *, font: str = BODY_FONT, size: float =
     return lines
 
 
-def _wrap_info(text: str, width: float, *, font: str = BODY_FONT, size: float = CELL_FONT_SIZE) -> tuple[int, float]:
+def _wrap_info(
+    text: str, width: float, *, font: str = BODY_FONT, size: float = CELL_FONT_SIZE,
+) -> tuple[int, float]:
     """(Zeilenzahl, breiteste tatsächlich benötigte Zeile) beim Umbruch auf `width`."""
     lines = _wrap_lines(text, width, font=font, size=size)
     max_line_w = max((stringWidth(line, font, size) for line in lines), default=0.0)
@@ -875,7 +719,10 @@ class SubjectHeading(Flowable):
             max_half_width = max(min(center_x - left_end, right_start - center_x) - 6, 10)
 
             center_fs = HEADER_VALUE_SIZE
-            while center_fs > 7.0 and c.stringWidth(self.confirm_value, HEADER_VALUE_FONT, center_fs) / 2 > max_half_width:
+            while (
+                center_fs > 7.0
+                and c.stringWidth(self.confirm_value, HEADER_VALUE_FONT, center_fs) / 2 > max_half_width
+            ):
                 center_fs -= 0.25
 
             c.setFont(HEADER_VALUE_FONT, center_fs)
@@ -1221,7 +1068,9 @@ def footer_context(subject_or_label: str, schoolyear_id: str) -> str:
     )
 
 
-def make_footer(center_text: str, *, page_offset_holder: list | None = None, blank_pages: set[int] | None = None):
+def make_footer(
+    center_text: str, *, page_offset_holder: list | None = None, blank_pages: set[int] | None = None,
+):
     """onPage-Callback: Fußzeile wie in den offiziellen IServ-Bücherlisten.
 
     Gezeichnet wird hier noch nichts — die Fußzeile nennt "Seite n von N", und
@@ -1457,7 +1306,10 @@ def main() -> None:
             elif match not in selected:
                 selected.append(match)
         if unknown:
-            print(f"Fehler: Unbekannte Fächer für Schuljahr {schoolyear_id}: {', '.join(unknown)}", file=sys.stderr)
+            print(
+                f"Fehler: Unbekannte Fächer für Schuljahr {schoolyear_id}: {', '.join(unknown)}",
+                file=sys.stderr,
+            )
             print(f"Verfügbare Fächer: {', '.join(subjects)}", file=sys.stderr)
             sys.exit(1)
         subjects = sorted(selected, key=str.casefold)
@@ -1474,7 +1326,10 @@ def main() -> None:
             try:
                 aufgabenfeld_map = fetch()
             except Exception as exc:  # Netzwerk/Parsing-Fehler -> nächste Quelle versuchen
-                print(f"Warnung: Aufgabenfelder konnten nicht von {url} geladen werden ({exc}).", file=sys.stderr)
+                print(
+                    f"Warnung: Aufgabenfelder konnten nicht von {url} geladen werden ({exc}).",
+                    file=sys.stderr,
+                )
                 continue
             if aufgabenfeld_map:
                 break
@@ -1502,7 +1357,8 @@ def main() -> None:
         except Exception as exc:
             print(
                 f"Warnung: Lehrerkürzel konnten nicht von {KOLLEGIUM_URL} geladen werden ({exc}) "
-                "— Kopfzeile/Unterschriftszeile zeigen ersatzweise den vollen Namen bzw. bleiben ohne Kürzel.",
+                "— Kopfzeile/Unterschriftszeile zeigen ersatzweise den vollen Namen bzw. bleiben "
+                "ohne Kürzel.",
                 file=sys.stderr,
             )
 
@@ -1545,8 +1401,8 @@ def main() -> None:
                 story.extend(
                     subject_story(
                         subject, by_subject[subject], schoolyear_id,
-                        confirmation=False, fkl_map=fkl_map, kollegium_map=kollegium_map, duplex=effective_duplex,
-                        blank_pages=blank_pages,
+                        confirmation=False, fkl_map=fkl_map, kollegium_map=kollegium_map,
+                        duplex=effective_duplex, blank_pages=blank_pages,
                     )
                 )
             footer_center = footer_context(label, schoolyear_id)
@@ -1562,8 +1418,8 @@ def main() -> None:
             blank_pages = set()
             story = subject_story(
                 subject, by_subject[subject], schoolyear_id,
-                confirmation=args.confirmation, fkl_map=fkl_map, kollegium_map=kollegium_map, duplex=effective_duplex,
-                blank_pages=blank_pages,
+                confirmation=args.confirmation, fkl_map=fkl_map, kollegium_map=kollegium_map,
+                duplex=effective_duplex, blank_pages=blank_pages,
             )
             out_path = out_dir / f"Bücherliste {subject} {sy_label}.pdf"
             footer_center = footer_context(subject, schoolyear_id)

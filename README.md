@@ -8,6 +8,7 @@ Eine Bibliothek und zwei Werkzeuge, die die IServ-Ausleihe-API **nur lesend**
 | `bestand/core/` | Bibliothek | Excel-Raster lesen, IServ-Snapshot holen, Zahlen eintragen — netzfrei testbar |
 | `bestand/` | `update_bestand_auto.py` | Kommandozeilen-Schale um `core/`: trägt Bestands-/Anmeldezahlen in die Excel-Liste ein |
 | `buecherlisten/` | `generate_booklists.py` | erzeugt die Bücherlisten-PDFs je Fach/Jahrgang |
+| `buecherlisten/trg_web.py` | Bibliothek | die drei TRG-Website-Scraper (Fachkonferenzleitungen, Fächer, Kollegium) — netzlos testbar, siehe `tests/test_trg_web.py` |
 
 Es wird **nie** nach IServ geschrieben.
 

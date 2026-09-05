@@ -57,7 +57,7 @@ bestand = ["py.typed"]
 # Pruefung *hier* waere das Versprechen ungedeckt - der Bruch fiele im
 # Geschwister-Repo auf, nicht in dem, das ihn verursacht.
 [tool.mypy]
-files = ["bestand"]
+files = ["bestand", "buecherlisten/trg_web.py"]
 python_version = "3.10"
 
 # ausleihe-api liefert seit seinem py.typed echte Typen - aber mypy findet sie
@@ -71,9 +71,18 @@ python_version = "3.10"
 # weil das Geschwister-Layout verbindlich ist (siehe [tool.uv.sources] oben).
 mypy_path = "../ausleihe-api"
 
-# Nicht auf tests/ und nicht auf buecherlisten/: geprueft wird, was das Rad
-# ausliefert und was py.typed deckt. buecherlisten/generate_booklists.py ist
-# ein eigenstaendiges Skript hinter dem Extra "pdf" und kein Paketinhalt.
+# Nicht auf tests/: geprueft wird, was das Rad ausliefert und was py.typed
+# deckt, tests/ gehoert zu keinem von beidem. buecherlisten/trg_web.py ist
+# seit der Trennung von den reportlab-/ausleihe-/dotenv-Importen in
+# generate_booklists.py (2026-09-05) sauber, durchgehend annotiert und
+# dependency-arm (nur html/re/difflib/requests) - die Pruefung kostet hier
+# nichts und haette den in ihm behobenen Regex-Bug (inkonsistentes
+# <table>- vs. <table[^>]*>-Pattern, siehe Modul-Docstring dort) nicht
+# gefunden, aber jede kuenftige Typ-Regression schon. generate_booklists.py
+# selbst bleibt ausserhalb: reportlab liefert kein py.typed, und die
+# Layout-Haelfte des Skripts ist rund 1100 Zeilen ausgemessener
+# Punkt-Konstanten - beides ausserhalb des Aufwands, der hier gerechtfertigt
+# waere.
 #
 # disallow_untyped_defs ist der Punkt: ohne die Zeile ueberspringt mypy eine
 # untypisierte Funktion samt Rumpf, und die Pruefung hoerte beim ersten
@@ -108,6 +117,17 @@ line-length = 110
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+# bestand/update_bestand.py ist der veraltete Vor-Refactor-Ansatz
+# (bestand/README.md markiert ihn "⚠️ veraltet — Nicht mehr verwenden",
+# update_bestand_auto.py ist der Ersatz) und bleibt bewusst unveraendert
+# liegen: ihn anzufassen, nur um den Linter zufriedenzustellen, wuerde in
+# Code Unruhe stiften, den niemand mehr ausfuehrt. Die Ignorierung ist auf
+# genau diesen einen Pfad begrenzt (nicht global E402/E501), damit eine neue
+# Datei diese Nachsicht nicht automatisch erbt. Gleiches Muster wie in
+# ausleihe-ausgabe/pyproject.toml.
+[tool.ruff.lint.per-file-ignores]
+"bestand/update_bestand.py" = ["E402", "E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

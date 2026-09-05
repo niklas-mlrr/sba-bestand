@@ -1,0 +1,117 @@
+name: CI
+
+# Läuft bei jedem Push und bei jedem Pull Request. Kein Secret nötig: das eine
+# Geschwister-Repo (ausleihe-api) ist öffentlich, und die Tests laufen
+# grundsätzlich offline - kein Netz, kein IServ (siehe tests/conftest.py:
+# bestand.core.testing.FakeClient und build_workbook).
+on:
+  push:
+  pull_request:
+
+# GitHub Actions kann nur innerhalb von $GITHUB_WORKSPACE auschecken. Das
+# Geschwister-Layout aus ../README.md ("ausleihe-api/, sba-bestand/ liegen
+# nebeneinander") wird deshalb direkt im Workspace nachgebaut:
+#
+#   $GITHUB_WORKSPACE/
+#     sba-bestand/     <- dieses Repo
+#     ausleihe-api/     <- Geschwister-Repo, oeffentlich
+#
+# pyproject.toml bindet ausleihe-api ueber [tool.uv.sources] als relativen,
+# editierbaren Pfad ein ("../ausleihe-api") - ohne dieses Layout schlaegt
+# schon `uv sync` fehl. Derselbe Pfad steht dort als mypy_path: der
+# editable-Install legt kein Paket in site-packages an, mypy findet
+# ausleihe also nur ueber den Quellbaum daneben. Der Auscheck-Schritt holt
+# den Standardzweig - wer hier etwas aendert, das ausleihe-api braucht,
+# pusht dort zuerst. Anders als sba-dashboard braucht dieses Repo nur EINEN
+# Geschwister-Checkout: sba-bestand selbst bindet kein weiteres Repo ein.
+jobs:
+  tests:
+    name: tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    # Reine Obergrenze gegen einen steckengebliebenen Lauf, ohne
+    # Leistungsaussage - siehe sba-dashboard/.github/workflows/ci.yml fuer die
+    # ausfuehrliche Begruendung (dort mit Zahlen aus dem ersten Lauf).
+    timeout-minutes: 30
+    strategy:
+      # Ein Windows-Fehlschlag darf die Linux-Ergebnisse nicht verschlucken -
+      # gerade der Windows-Schreibpfad unten ist der Grund, warum Windows
+      # ueberhaupt in der Matrix steht.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: "3.10"
+          - os: ubuntu-latest
+            python-version: "3.11"
+          # Windows ist hier Pflicht, nicht Beigabe: bestand/core/excel_io.py
+          # ::replace_with_retry existiert einzig fuer das Windows-
+          # os.replace()/WinError-5-Verhalten (ein zweites, lesendes
+          # openpyxl-load_workbook() haelt unter Windows ein Handle auf die
+          # Zieldatei offen, das POSIX-rename() ignoriert, WinError-5-
+          # PermissionError aber nicht) - und dieses Repo (sba-bestand) ist
+          # der Ort, an dem dieser Code lebt (nach dem Umzug aus ausleihe-api,
+          # siehe ../README.md, Konventionen). Ohne einen Windows-Runner
+          # bliebe genau dieser Zweig in jedem CI-Lauf ungeprueft.
+          - os: windows-latest
+            python-version: "3.11"
+    defaults:
+      run:
+        working-directory: sba-bestand
+    steps:
+      - name: sba-bestand auschecken
+        uses: actions/checkout@v5
+        with:
+          path: sba-bestand
+
+      - name: ausleihe-api auschecken (Geschwister-Repo)
+        uses: actions/checkout@v5
+        with:
+          repository: niklas-mlrr/ausleihe-api
+          path: ausleihe-api
+
+      # actions/setup-python statt "uv python install": setup-python bringt
+      # auf allen drei Runnern (insbesondere windows-latest) einen
+      # vorinstallierten, von GitHub gepflegten Python-Build mit und braucht
+      # dafuer keinen zusaetzlichen Download bei jedem Lauf. uv erkennt den
+      # von setup-python auf dem PATH platzierten Interpreter automatisch.
+      - name: Python ${{ matrix.python-version }} einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # astral-sh/setup-uv installiert nur den uv-Binaerbaustein selbst;
+      # Python kommt oben aus actions/setup-python. Ab v8 veroeffentlicht
+      # setup-uv keine wandernden Major-Tags mehr (kein "@v8", nur volle
+      # Versionen wie "@v10.0.1") - deshalb hier ausnahmsweise eine exakte
+      # Version statt eines Major-Tags, geprueft ueber die Tag-Liste des
+      # Repos. Identisch zu sba-dashboard/.github/workflows/ci.yml.
+      - name: uv einrichten
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: "sba-bestand/uv.lock"
+
+      # --extra pdf ist hier Pflicht, nicht optional: reportlab ist in
+      # pyproject.toml bewusst ein Extra (sba-dashboard braucht es nie, siehe
+      # ../README.md, Konventionen), aber buecherlisten/generate_booklists.py
+      # importiert es auf Modulebene. Ohne das Extra wuerde schon ein blosser
+      # `ruff check` (der die Datei als Quelltext parst, aber nicht ausfuehrt)
+      # zwar durchlaufen - ein import-scharfer Check oder ein kuenftiger
+      # mypy-Lauf ueber diese Datei aber mit ModuleNotFoundError scheitern.
+      - name: Abhängigkeiten installieren
+        run: uv sync --all-groups --extra pdf
+
+      - name: Ruff (Lint)
+        run: uv run ruff check bestand tests buecherlisten
+
+      # Prueft nur, was [tool.mypy].files in pyproject.toml auflistet
+      # (bestand/ und buecherlisten/trg_web.py) - generate_booklists.py bleibt
+      # aussen vor, Begruendung steht dort als Kommentar. Auf jedem Runner mit
+      # dessen eigener Plattform, nicht nur auf Linux: bestand/core/excel_io.py
+      # hat einen eigenen Windows-Zweig (os.replace/WinError-5, siehe oben),
+      # und mypy prueft immer nur den Zweig der Plattform, auf der es laeuft.
+      - name: Mypy (Typprüfung)
+        run: uv run mypy
+
+      - name: Pytest
+        run: uv run pytest -q

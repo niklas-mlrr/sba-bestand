@@ -60,3 +60,15 @@ Verlag, ISBN, Neupreis, Leihgebühr.
 Voraussetzungen: das Geschwister-Repo `ausleihe-api` liegt **neben** diesem Repo
 und enthält eine `.env` mit den IServ-Zugangsdaten. Abhängigkeiten via `uv sync`
 im `sba-bestand`-Root (siehe `../README.md`).
+
+## `trg_web.py` — die TRG-Website-Scraper
+
+`generate_booklists.py` holt drei Zuordnungen von der öffentlichen TRG-Website
+(Fachkonferenzleitungen, Aufgabenfelder, Kollegiumskürzel; für `--confirmation`
+und `--mode aufgabenfeld`). Diese drei Scraper stehen seit 2026-09-05 in
+`trg_web.py` statt im Hauptskript, weil sie so — anders als der Rest der Datei —
+netzlos testbar sind: jede `fetch_*`-Funktion ist nur `_hole()` (Netzabruf) plus
+eine reine `parse_*`-Funktion, und genau die `parse_*`-Funktionen prüft
+`../tests/test_trg_web.py` gegen Fixtures unter `../tests/fixtures/trg/`
+(shape-genaue HTML-Ausschnitte mit erfundenen Namen statt echter
+Kollegiumsdaten).

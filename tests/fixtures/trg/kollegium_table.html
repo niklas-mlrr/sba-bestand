@@ -1,0 +1,16 @@
+<!--
+Fixture für parse_kollegium_kuerzel_mapping() (tests/test_trg_web.py).
+Formstruktur (table-Klasse/-Style, Spaltenreihenfolge Name|Kürzel|Fächer|
+Amtsbezeichnung) 1:1 von der Live-Seite https://trg-osterode.de/wir-am-trg/kollegium/
+übernommen (Abruf 2026-09-05), auf 8 Zeilen (Kopfzeile + 7 Personen) gekürzt —
+die Live-Seite hat 60 Zeilen, für die Parser-Logik reicht ein kleiner
+Ausschnitt. Alle Namen und Kürzel sind FREI ERFUNDEN (keine echten
+Kollegiumsdaten, siehe Repo-Regel gegen personenbezogene Daten in öffentlichen
+Repos). Die Schreibweisen von "Petra Wilkens Ahlgrimm" und "Birgit Sanders
+Kühne" weichen absichtlich leicht von den Varianten in fkl_table.html ab
+("Wilkens-Ahlgrim" bzw. "Sanders-Kühne") — das bildet den in
+find_kollegium_kuerzel() dokumentierten, real beobachteten Fall nach, dass die
+beiden TRG-Seiten denselben Namen nicht identisch schreiben (dort: Bindestrich
+vs. Leerzeichen und/oder eine abweichende Schreibvariante).
+-->
+<table class="has-background" style="background-color:#e7f5fe"><tbody><tr><td><strong>Name</strong></td><td><strong>Kürzel</strong></td><td><strong>Fächer</strong></td><td><strong>Amtsbezeichnung</strong></td></tr><tr><td>Dr. Andreas Wehrmann</td><td>We</td><td>Ma, Ph</td><td>Oberstudienrat</td></tr><tr><td>Maik Osterhoff</td><td>Ost</td><td>Mu, Ge</td><td>Oberstudienrat</td></tr><tr><td>Birgit Sanders Kühne</td><td>SaK</td><td>Ge, Re</td><td>Oberstudienrätin</td></tr><tr><td>Petra Wilkens Ahlgrimm</td><td>WA</td><td>De, Sn*</td><td>Oberstudienrätin</td></tr><tr><td>Katrin Brahms</td><td>Bra</td><td>En*, Fr</td><td>Oberstudienrätin</td></tr><tr><td>Franziska Ahrens</td><td>Ah</td><td>De, La*</td><td>Studienrätin</td></tr><tr><td>David Falkner</td><td>Fkn</td><td>En, Sp*</td><td>Studienrat</td></tr></tbody></table>
