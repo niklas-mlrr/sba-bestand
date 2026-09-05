@@ -855,7 +855,7 @@ class SubjectHeading(Flowable):
 
         if self.confirm_value:
             center_x = dx + FOOTER_CENTER_X
-            confirm_label = "Bücherlisten zu Bestätigen durch"
+            confirm_label = "Zu bestätigen durch"
 
             # Label-Zeile ("Liste für"/"gültig für"-Höhe): kurzer, fester
             # Text — bei den üblichen Fach-/Jahr-Kürzeln links/rechts nie eng.
@@ -911,8 +911,8 @@ class ConfirmationBlock(Flowable):
             signature_label += f" ({teacher_kuerzel})"
         self._intro_par = Paragraph(
             f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die oben "
-            f"aufgeführten Bücher der Bücherliste {subject} und insbesondere deren ISBN "
-            f"für das Schuljahr {schoolyear_id}",
+            f"aufgeführte Bücherliste {subject} — insbesondere Klasse, Verlag und ISBN "
+            f"der aufgeführten Bücher — für das Schuljahr {schoolyear_id}",
             CONFIRM_STYLE,
         )
         _, self._intro_h = self._intro_par.wrap(self.width, 0xFFFFFF)
