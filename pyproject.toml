@@ -60,6 +60,17 @@ bestand = ["py.typed"]
 files = ["bestand"]
 python_version = "3.10"
 
+# ausleihe-api liefert seit seinem py.typed echte Typen - aber mypy findet sie
+# nur ueber diesen Pfad. Der editable-Install von setuptools legt in
+# site-packages keinen Paketordner ab, sondern einen Import-Finder
+# (`__editable___iserv_ausleihe_api_0_2_0_finder.py` plus .pth); mypy liest
+# sys.path, nicht die Import-Hooks der Laufzeit, und sah das Paket damit
+# ueberhaupt nicht. Ohne diese Zeile blieben AusleiheClient, NotFoundError und
+# match_book also `Any`, py.typed hin oder her - nachgeprueft mit `reveal_type`
+# (2026-09-05: dreimal "Any" bei gruenem Lauf). Der relative Pfad ist zulaessig,
+# weil das Geschwister-Layout verbindlich ist (siehe [tool.uv.sources] oben).
+mypy_path = "../ausleihe-api"
+
 # Nicht auf tests/ und nicht auf buecherlisten/: geprueft wird, was das Rad
 # ausliefert und was py.typed deckt. buecherlisten/generate_booklists.py ist
 # ein eigenstaendiges Skript hinter dem Extra "pdf" und kein Paketinhalt.
@@ -74,12 +85,22 @@ no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 
-# openpyxl, isbnlib, requests, dotenv und das Geschwister-Repo ausleihe-api
-# liefern kein py.typed. Namentlich statt global, damit ein Tippfehler in einem
-# Import aus dem eigenen Paket ein Fehler bleibt und nicht still zu Any wird.
+# openpyxl, isbnlib, requests und dotenv liefern kein py.typed. Namentlich
+# statt global, damit ein Tippfehler in einem Import aus dem eigenen Paket ein
+# Fehler bleibt und nicht still zu Any wird - und damit ein Bruch der
+# Pfad-Aufloesung oben rot wird, statt ausleihe.* lautlos wieder auf Any
+# zurueckfallen zu lassen. `ausleihe.*` stand bis 2026-09-05 in dieser Liste.
 [[tool.mypy.overrides]]
-module = ["openpyxl.*", "isbnlib.*", "requests.*", "dotenv.*", "ausleihe.*"]
+module = ["openpyxl.*", "isbnlib.*", "requests.*", "dotenv.*"]
 ignore_missing_imports = true
+
+# ausleihe wird fuer seine Typen gelesen, aber nicht hier geprueft: Fehler im
+# Bibliothekscode gehoeren in ausleihe-api, das dafuer einen eigenen mypy-Lauf
+# hat. `silent` heisst genau das - Typen benutzen, Meldungen aus diesen Modulen
+# unterdruecken.
+[[tool.mypy.overrides]]
+module = ["ausleihe.*"]
+follow_imports = "silent"
 
 [tool.ruff]
 target-version = "py310"

@@ -177,8 +177,8 @@ def main() -> None:
 
     if not_found:
         print(f"\n{len(not_found)} Zelle(n) übersprungen (ISBN nicht in API):")
-        for s in not_found:
-            print(f"  {s}")
+        for meldung in not_found:
+            print(f"  {meldung}")
 
     if angemeldet_mappings:
         schoolyear_id = pick_schoolyear(client, args.schoolyear)
@@ -229,8 +229,8 @@ def main() -> None:
 
             if a_zero:
                 print(f"\n{len(a_zero)} 'Angemeldet'-Zelle(n) mit 0 Anmeldungen (keine Treffer im Schuljahr):")
-                for s in a_zero:
-                    print(f"  {s}")
+                for meldung in a_zero:
+                    print(f"  {meldung}")
 
     # Einmal speichern, nachdem alle Zellen (Bestand + Angemeldet) gesetzt wurden.
     if changed or a_changed:

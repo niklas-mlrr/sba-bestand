@@ -20,7 +20,7 @@ from openpyxl.utils import get_column_letter, range_boundaries
 
 from .config import BestandConfig
 from .grid import SKIP_NO_FACH, SKIP_NO_ZUSTAND, Blatt, Grid, GridCell
-from .iserv import Snapshot
+from .iserv import Buch, Snapshot
 
 # Wie ``Blatt`` (siehe grid.py): openpyxl liefert kein py.typed.
 Mappe = Any  # openpyxl.workbook.workbook.Workbook
@@ -161,16 +161,20 @@ def apply_snapshot(
     processed_enrollment: set[tuple[int, str, str]] = set()   # (Jahrgang, ISBN, Zustand)
 
     current_row: int | None = None
-    books: list[dict] = []
+    books: list[Buch] = []
 
     for cell in grid.cells:
         if cell.row != current_row:
             current_row = cell.row
             books = snapshot.books_for_grade(cell.grade)
             _dbg(f"    {len(books)} Bücher geladen")
-            for book in books:
-                _dbg(f"      isbn={book['isbn']} subjects={book['subjects']} "
-                     f"title={book['title'][:50]!r}")
+            # Nicht `book`: so heisst unten das *ausgewaehlte* Buch, und das
+            # darf None sein. Ein Name fuer zwei Dinge hiess, dass mypy den
+            # nicht-optionalen Typ dieser Schleife festschrieb und die
+            # Zuweisung `book = match.book` dagegen lief.
+            for geladenes in books:
+                _dbg(f"      isbn={geladenes['isbn']} subjects={geladenes['subjects']} "
+                     f"title={geladenes['title'][:50]!r}")
 
         letter = cell.col_letter
         if cell.skip_reason == SKIP_NO_ZUSTAND:
@@ -180,7 +184,12 @@ def apply_snapshot(
             _dbg(f"    Sp.{letter}: Zustand={cell.zustand_label!r} "
                  f"(nicht angemeldet/bezahlt/bestand/bestellt) → skip")
             continue
-        if cell.skip_reason == SKIP_NO_FACH:
+        # `subject is None` und SKIP_NO_FACH sind dieselbe Lage: parse_grid
+        # setzt subject genau dann, wenn es ein Fach-Label gab (grid.py, ueber
+        # strip_hint). Die Kopplung zweier Felder sieht mypy nicht, und seit
+        # ausleihe-api py.typed liefert, verlangt match_book unten ein `str`.
+        # Also wird die Bedingung ausgeschrieben statt nur der Grund abgefragt.
+        if cell.skip_reason == SKIP_NO_FACH or cell.subject is None:
             res.diagnostics.append(
                 f"Sp.{letter}/Zeile {cell.row}: kein Fach-Label für Zustand {cell.zustand_label!r}."
             )

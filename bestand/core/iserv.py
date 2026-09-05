@@ -22,11 +22,26 @@ except Exception:  # pragma: no cover - nur ohne installierte Bibliothek
 # jede Oberflaeche formuliert selbst.
 Progress = Optional[Callable[[str, dict], None]]
 
-# Der IServ-Client wird injiziert (siehe Modulkopf) und kommt aus
-# ausleihe-api, das kein py.typed liefert. Der Alias haelt fest, dass hier
-# bewusst nichts geprueft werden kann - und dass es derselbe Client ist, den
-# alle fuenf Funktionen unten erwarten.
+# Der IServ-Client wird injiziert (siehe Modulkopf). Der Alias haelt fest, dass
+# es derselbe Client ist, den alle fuenf Funktionen unten erwarten.
+#
+# Warum trotzdem Any, seit ausleihe-api py.typed liefert: hier steht in den
+# Tests bestand.core.testing.FakeClient, ein Testdoppel, das AusleiheClient nur
+# in den benutzten Endpunkten nachbildet und nicht von ihm erbt.
+# `AusleiheClient` als Typ zu schreiben waere also schlicht falsch. Bliebe ein
+# Protocol - das muesste fuenf verschachtelte Aufrufe nachziehen
+# (schoolyears.get_current/get_booklists/get_booklist, series.get_all,
+# admin.get_enrollments), also drei Unter-Protokolle fuer eine einzige
+# Annotation. Die Grenzen zu ausleihe, die wirklich Daten tragen, sind
+# stattdessen geprueft: match_book (update.py) und NotFoundError.
 Client = Any  # ausleihe.AusleiheClient - oder bestand.core.testing.FakeClient
+
+# Ein Buch, wie es aus einer IServ-Buecherliste faellt und in match_book
+# hineingeht. Seit ausleihe-api py.typed liefert, ist der Schluesseltyp keine
+# Formalie mehr: match_book verlangt list[dict[str, Any]], und das blosse
+# `dict` hier war dict[Any, Any] - die Grenze zwischen load_grade_books und
+# match_book war damit ungeprueft, obwohl beide Seiten annotiert aussahen.
+Buch = dict[str, Any]
 
 EV_BOOKLISTS = "booklists"
 EV_ENROLLMENTS = "enrollments"
@@ -35,7 +50,7 @@ EV_GRADE_BOOKS = "grade_books"
 EV_NO_BOOKLIST = "no_booklist"
 
 
-def load_grade_books(client: Client, sy_id: str, bl_id: int) -> list[dict]:
+def load_grade_books(client: Client, sy_id: str, bl_id: int) -> list[Buch]:
     """Alle ausleihbaren Buecher einer Buecherliste (nur GET, gefiltert).
 
     Gefiltert: borrowable, Leihpreis > 0, kein 'eBook' im Titel, ISBN eindeutig.
@@ -46,7 +61,7 @@ def load_grade_books(client: Client, sy_id: str, bl_id: int) -> list[dict]:
         return []
 
     seen_isbns: set[str] = set()
-    books: list[dict] = []
+    books: list[Buch] = []
     for sec in detail.get("sections", []):
         for opt in sec.get("options", []):
             for item in opt.get("items", []):
@@ -115,7 +130,7 @@ def fetch_series_data(client: Client) -> dict[str, dict]:
     }
 
 
-class LazyGradeBooks(Mapping[int, list[dict]]):
+class LazyGradeBooks(Mapping[int, list[Buch]]):
     """Buecherlisten je Jahrgang, erst beim ersten Zugriff geladen.
 
     Der Abruf einer Buecherliste ist eine eigene HTTP-Runde je Jahrgang. Das
@@ -132,13 +147,13 @@ class LazyGradeBooks(Mapping[int, list[dict]]):
         self._sy_id = sy_id
         self._booklists = booklists_by_grade
         self._progress = progress
-        self._cache: dict[int, list[dict]] = {}
+        self._cache: dict[int, list[Buch]] = {}
 
     def _emit(self, event: str, **payload: Any) -> None:
         if self._progress is not None:
             self._progress(event, payload)
 
-    def __getitem__(self, grade: int) -> list[dict]:
+    def __getitem__(self, grade: int) -> list[Buch]:
         if grade not in self._cache:
             bl = self._booklists.get(grade)
             if bl:
@@ -155,7 +170,7 @@ class LazyGradeBooks(Mapping[int, list[dict]]):
     def __len__(self) -> int:
         return len(self._booklists)
 
-    def materialize(self) -> dict[int, list[dict]]:
+    def materialize(self) -> dict[int, list[Buch]]:
         """Laedt alle bekannten Jahrgaenge und gibt ein gewoehnliches Dict zurueck."""
         return {grade: self[grade] for grade in self._booklists}
 
@@ -166,7 +181,7 @@ class Snapshot:
     schoolyear_id: str
     fetched_at: datetime
     booklists_by_grade: dict[int, dict] = field(default_factory=dict)
-    grade_books: Mapping[int, list[dict]] = field(default_factory=dict)
+    grade_books: Mapping[int, list[Buch]] = field(default_factory=dict)
     enrolled: dict[tuple[int, str], int] = field(default_factory=dict)
     paid: dict[tuple[int, str], int] = field(default_factory=dict)
     series_data: dict[str, dict] = field(default_factory=dict)
@@ -175,7 +190,7 @@ class Snapshot:
     def bestand_by_isbn(self) -> dict[str, int]:
         return {isbn: data["total"] for isbn, data in self.series_data.items()}
 
-    def books_for_grade(self, grade: int) -> list[dict]:
+    def books_for_grade(self, grade: int) -> list[Buch]:
         try:
             return self.grade_books[grade]
         except KeyError:
