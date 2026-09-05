@@ -30,7 +30,7 @@ dependencies = [
 pdf = ["reportlab>=4,<5"]
 
 [dependency-groups]
-dev = ["ruff>=0.8,<1", "pytest>=8,<9"]
+dev = ["ruff>=0.8,<1", "pytest>=8,<9", "mypy>=1.11,<2"]
 
 # ausleihe-api wird als Geschwister-Repo geklont; identisches Muster wie in
 # ausleihe-ausgabe/pyproject.toml.
@@ -39,6 +39,47 @@ iserv-ausleihe-api = { path = "../ausleihe-api", editable = true }
 
 [tool.setuptools.packages.find]
 include = ["bestand*"]
+
+# PEP-561-Marker. bestand/core/ ist durchgehend annotiert, aber ohne diese
+# leere Datei im Rad ignoriert jeder Typpruefer die Annotationen: fuer mypy in
+# sba-dashboard waren Snapshot, GridEntry, UpdateResult und BestandConfig
+# schlicht Any - sie standen in den Signaturen von app/refresh.py fuer den
+# Leser da, geprueft wurde an der Paketgrenze nichts. Der Marker liegt in
+# bestand/ und gilt damit auch fuer bestand.core; package-data traegt ihn ins
+# Rad, weil packages.find nur .py-Dateien einsammelt.
+[tool.setuptools.package-data]
+bestand = ["py.typed"]
+
+# mypy gehoert erst seit dem py.typed-Marker hierher, und zwar zwingend: der
+# Marker ist ein Versprechen an jeden Nutzer des Pakets ("die Annotationen hier
+# stimmen"), und sba-dashboard verlaesst sich seither darauf, statt Snapshot,
+# GridEntry, UpdateResult und BestandConfig als Any zu behandeln. Ohne eine
+# Pruefung *hier* waere das Versprechen ungedeckt - der Bruch fiele im
+# Geschwister-Repo auf, nicht in dem, das ihn verursacht.
+[tool.mypy]
+files = ["bestand"]
+python_version = "3.10"
+
+# Nicht auf tests/ und nicht auf buecherlisten/: geprueft wird, was das Rad
+# ausliefert und was py.typed deckt. buecherlisten/generate_booklists.py ist
+# ein eigenstaendiges Skript hinter dem Extra "pdf" und kein Paketinhalt.
+#
+# disallow_untyped_defs ist der Punkt: ohne die Zeile ueberspringt mypy eine
+# untypisierte Funktion samt Rumpf, und die Pruefung hoerte beim ersten
+# untypisierten Neuzugang lautlos auf zu pruefen. Gleiche Begruendung wie in
+# sba-dashboard/pyproject.toml.
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+# openpyxl, isbnlib, requests, dotenv und das Geschwister-Repo ausleihe-api
+# liefern kein py.typed. Namentlich statt global, damit ein Tippfehler in einem
+# Import aus dem eigenen Paket ein Fehler bleibt und nicht still zu Any wird.
+[[tool.mypy.overrides]]
+module = ["openpyxl.*", "isbnlib.*", "requests.*", "dotenv.*", "ausleihe.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 target-version = "py310"

@@ -22,6 +22,12 @@ except Exception:  # pragma: no cover - nur ohne installierte Bibliothek
 # jede Oberflaeche formuliert selbst.
 Progress = Optional[Callable[[str, dict], None]]
 
+# Der IServ-Client wird injiziert (siehe Modulkopf) und kommt aus
+# ausleihe-api, das kein py.typed liefert. Der Alias haelt fest, dass hier
+# bewusst nichts geprueft werden kann - und dass es derselbe Client ist, den
+# alle fuenf Funktionen unten erwarten.
+Client = Any  # ausleihe.AusleiheClient - oder bestand.core.testing.FakeClient
+
 EV_BOOKLISTS = "booklists"
 EV_ENROLLMENTS = "enrollments"
 EV_SERIES = "series"
@@ -29,7 +35,7 @@ EV_GRADE_BOOKS = "grade_books"
 EV_NO_BOOKLIST = "no_booklist"
 
 
-def load_grade_books(client, sy_id: str, bl_id: int) -> list[dict]:
+def load_grade_books(client: Client, sy_id: str, bl_id: int) -> list[dict]:
     """Alle ausleihbaren Buecher einer Buecherliste (nur GET, gefiltert).
 
     Gefiltert: borrowable, Leihpreis > 0, kein 'eBook' im Titel, ISBN eindeutig.
@@ -65,7 +71,7 @@ def load_grade_books(client, sy_id: str, bl_id: int) -> list[dict]:
 
 
 def fetch_enrollment_counts_by_grade(
-    client, sy_id: str
+    client: Client, sy_id: str
 ) -> tuple[dict[tuple[int, str], int], dict[tuple[int, str], int]]:
     """Zaehlt Anmeldungen und Bezahlungen pro (Jahrgang, ISBN).
 
@@ -95,7 +101,7 @@ def fetch_enrollment_counts_by_grade(
     return enrolled, paid
 
 
-def fetch_series_data(client) -> dict[str, dict]:
+def fetch_series_data(client: Client) -> dict[str, dict]:
     """Laedt alle Serien; gibt pro ISBN 'total', 'publisher', 'price', 'title'."""
     return {
         s.isbn: {
@@ -109,7 +115,7 @@ def fetch_series_data(client) -> dict[str, dict]:
     }
 
 
-class LazyGradeBooks(Mapping):
+class LazyGradeBooks(Mapping[int, list[dict]]):
     """Buecherlisten je Jahrgang, erst beim ersten Zugriff geladen.
 
     Der Abruf einer Buecherliste ist eine eigene HTTP-Runde je Jahrgang. Das
@@ -118,7 +124,10 @@ class LazyGradeBooks(Mapping):
     Tests genauso.
     """
 
-    def __init__(self, client, sy_id: str, booklists_by_grade: dict[int, dict], progress: Progress = None):
+    def __init__(
+        self, client: Client, sy_id: str, booklists_by_grade: dict[int, dict],
+        progress: Progress = None,
+    ) -> None:
         self._client = client
         self._sy_id = sy_id
         self._booklists = booklists_by_grade
@@ -174,7 +183,7 @@ class Snapshot:
 
 
 def fetch_snapshot(
-    client,
+    client: Client,
     sy_id: str | None = None,
     *,
     progress: Progress = None,
@@ -204,11 +213,13 @@ def fetch_snapshot(
     emit(EV_SERIES)
     series_data = fetch_series_data(client)
 
-    grade_books: Mapping[int, list[dict]] = LazyGradeBooks(
-        client, sy_id, booklists_by_grade, progress
-    )
-    if eager:
-        grade_books = grade_books.materialize()  # type: ignore[union-attr]
+    # Erst in die konkrete Klasse, dann in den Mapping-Typ: ``materialize`` ist
+    # kein Mapping-Protokoll, sondern gehoert LazyGradeBooks. Vorher stand hier
+    # eine Zuweisung an die schon als Mapping deklarierte Variable, also ein
+    # ``# type: ignore`` - mit dem falschen Fehlercode obendrein
+    # (``union-attr``, gemeldet wurde ``attr-defined``).
+    lazy = LazyGradeBooks(client, sy_id, booklists_by_grade, progress)
+    grade_books: Mapping[int, list[dict]] = lazy.materialize() if eager else lazy
 
     return Snapshot(
         schoolyear_id=sy_id,

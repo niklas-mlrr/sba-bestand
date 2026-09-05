@@ -19,3 +19,7 @@ bestand/backups/
 
 # setuptools-Metadaten des editable-Installs
 *.egg-info/
+
+# setuptools/uv-Bauverzeichnisse (`uv build` beim Pruefen des py.typed-Rads)
+build/
+dist/

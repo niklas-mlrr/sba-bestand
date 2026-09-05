@@ -15,6 +15,7 @@ Kein Netz, keine echte Excel-Datei, kein pytest-Import.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.worksheet.filters import AutoFilter
@@ -43,7 +44,7 @@ def _block_start(index: int) -> int:
     return 2 + index * 4
 
 
-def _build_raster(ws) -> None:
+def _build_raster(ws: Any) -> None:
     ws["A1"] = "Fach"
     ws["A2"] = "Zustand"
     for i, fach in enumerate(BLOCKS_SEK1):
@@ -89,7 +90,7 @@ def _build_raster(ws) -> None:
     ws.merge_cells(start_row=10, start_column=2, end_row=10, end_column=8)
 
 
-def _build_bestellt(ws) -> None:
+def _build_bestellt(ws: Any) -> None:
     ws.append(["B. Lfd.-Nr.", "Lfd. Nr.", "Stückzahl", "Verfasser/Titel", "Verlag",
                "Best.-Nr. (ISBN)", "Einzelpreis (brutto)"])
     ws.append([8, 1, 10, "Deutschbuch 6", "Cornelsen", "978-3-06-205223-1", 20.0])
@@ -110,7 +111,7 @@ _ZU_BESTELLEN_COLS = (
 )
 
 
-def _build_zu_bestellen(ws) -> None:
+def _build_zu_bestellen(ws: Any) -> None:
     for i, (name, _fn, _label) in enumerate(_ZU_BESTELLEN_COLS, start=1):
         ws.cell(1, i).value = name
     # Eine Alt-Datenzeile: ihre Bestell-Nr. muss beim Neuaufbau per ISBN
@@ -152,7 +153,7 @@ def build_workbook(path: Path) -> Path:
 # ── Fake-IServ ────────────────────────────────────────────────────────────────
 
 class _Series:
-    def __init__(self, isbn, title, total, publisher, price):
+    def __init__(self, isbn: str, title: str, total: int, publisher: str, price: float) -> None:
         self.isbn, self.title, self.total = isbn, title, total
         self.publisher, self.price = publisher, price
 
@@ -193,13 +194,13 @@ _ENROLLMENTS = {
 
 
 class _Schoolyears:
-    def get_current(self):
+    def get_current(self) -> dict[str, str]:
         return {"id": "2026/2027"}
 
-    def get_booklists(self, sy_id):
+    def get_booklists(self, sy_id: str) -> list[dict[str, int]]:
         return [{"id": 100 + g, "grade": g} for g in sorted(_BOOKS)]
 
-    def get_booklist(self, sy_id, bl_id):
+    def get_booklist(self, sy_id: str, bl_id: int) -> dict[str, Any]:
         grade = bl_id - 100
         items = [
             {"borrowable": True, "series": isbn,
@@ -214,8 +215,8 @@ class _Schoolyears:
 
 
 class _Admin:
-    def get_enrollments(self, sy_id):
-        out = []
+    def get_enrollments(self, sy_id: str) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
         for (grade, isbn), (count, paid) in _ENROLLMENTS.items():
             for i in range(count):
                 out.append({
@@ -231,17 +232,17 @@ class _Admin:
 
 
 class _SeriesApi:
-    def get_all(self, detailed=False):
+    def get_all(self, detailed: bool = False) -> list[_Series]:
         return list(_SERIES.values())
 
 
 class FakeClient:
     """Minimaler Ersatz fuer AusleiheClient - nur die genutzten Endpunkte."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.schoolyears = _Schoolyears()
         self.admin = _Admin()
         self.series = _SeriesApi()
 
-    def login(self):
+    def login(self) -> bool:
         return True

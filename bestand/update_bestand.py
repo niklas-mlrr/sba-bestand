@@ -15,6 +15,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).parent
 _ROOT = _HERE.parent
@@ -45,7 +46,7 @@ from openpyxl.utils import get_column_letter
 from bestand.core import atomic_save_workbook
 
 
-def resolve_anchor(ws, cell_ref: str) -> str:
+def resolve_anchor(ws: Any, cell_ref: str) -> str:
     """Gibt die Ankerzelle (oben-links) zurück, falls cell_ref Teil einer merged-range ist."""
     for merged in ws.merged_cells.ranges:
         if cell_ref in merged:
@@ -194,7 +195,10 @@ def main() -> None:
             enrollment_counts = None
 
         if enrollment_counts is not None:
-            a_changed: list[tuple[str, object, int]] = []
+            # Ohne Annotation: die steht schon an der Vorinitialisierung oben,
+            # und ein zweites Mal waere es eine Neudeklaration derselben
+            # Variablen im selben Funktionsraum.
+            a_changed = []
             a_unchanged = 0
             a_zero: list[str] = []
             for isbn, cell in angemeldet_mappings:

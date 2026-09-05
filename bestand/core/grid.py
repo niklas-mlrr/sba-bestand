@@ -18,9 +18,17 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from openpyxl.utils import get_column_letter
+
+# openpyxl liefert kein py.typed: Blatt, Zelle und Zellverbund sind fuer einen
+# Typpruefer unvermeidlich ``Any``. Die Aliase sagen dem Leser trotzdem, was
+# durchfliesst, und machen den Unterschied sichtbar - ``Blatt`` heisst "hier
+# ist nichts pruefbar", eine fehlende Annotation hiesse "hier hat jemand
+# etwas vergessen". Gleiches Muster wie ``workbook: Any`` in excel_io.py.
+Blatt = Any          # openpyxl.worksheet.worksheet.Worksheet
+Zellverbund = Any    # openpyxl.worksheet.cell_range.CellRange
 
 # Zustaende, in die geschrieben werden darf, in Spaltenreihenfolge des Blocks.
 WRITABLE_ZUSTAENDE = ("angemeldet", "bezahlt", "bestand", "bestellt")
@@ -37,7 +45,7 @@ Debug = Optional[Callable[[str], None]]
 
 # ── Zellen-Hilfsfunktionen ────────────────────────────────────────────────────
 
-def merge_deckt_ab(merged, row: int, col: int) -> bool:
+def merge_deckt_ab(merged: Zellverbund, row: int, col: int) -> bool:
     """Ob ``merged`` die Zelle (row, col) ueberdeckt - reiner Ganzzahlvergleich.
 
     Der naheliegende Weg waere ``f"{get_column_letter(col)}{row}" in merged``.
@@ -61,7 +69,7 @@ def merge_deckt_ab(merged, row: int, col: int) -> bool:
     return merged.min_row <= row <= merged.max_row and merged.min_col <= col <= merged.max_col
 
 
-def resolve_anchor(ws, row: int, col: int) -> tuple[int, int]:
+def resolve_anchor(ws: Blatt, row: int, col: int) -> tuple[int, int]:
     """Gibt (anchor_row, anchor_col) zurueck - bei Zellenverbund die oben-links-Zelle."""
     for merged in ws.merged_cells.ranges:
         if merge_deckt_ab(merged, row, col):
@@ -69,7 +77,7 @@ def resolve_anchor(ws, row: int, col: int) -> tuple[int, int]:
     return row, col
 
 
-def merged_range_at(ws, row: int, col: int):
+def merged_range_at(ws: Blatt, row: int, col: int) -> Zellverbund | None:
     """Der Zellenverbund, der (row, col) ueberdeckt - oder None."""
     for merged in ws.merged_cells.ranges:
         if merge_deckt_ab(merged, row, col):
@@ -77,7 +85,7 @@ def merged_range_at(ws, row: int, col: int):
     return None
 
 
-def find_fach_for_col(ws, fach_rows: list[int], col: int) -> str | None:
+def find_fach_for_col(ws: Blatt, fach_rows: list[int], col: int) -> str | None:
     """Fach-Label fuer Spalte col aus der naechsten (untersten) Fach-Zeile mit Inhalt.
 
     Ist die Zelle leer, wird die naechsthoehere Fach-Zeile als Fallback genommen -
@@ -94,7 +102,7 @@ def find_fach_for_col(ws, fach_rows: list[int], col: int) -> str | None:
     return None
 
 
-def find_zustand_for_col(ws, zustand_rows: list[int], col: int) -> str | None:
+def find_zustand_for_col(ws: Blatt, zustand_rows: list[int], col: int) -> str | None:
     """Zustand-Label fuer Spalte col, mit Fallback auf hoehere Zustand-Zeilen."""
     for zustand_row in reversed(zustand_rows):
         ar, ac = resolve_anchor(ws, zustand_row, col)
@@ -108,7 +116,7 @@ def find_zustand_for_col(ws, zustand_rows: list[int], col: int) -> str | None:
 
 # ── Zeilen-Klassifikation ─────────────────────────────────────────────────────
 
-def classify_row(ws, row: int) -> str:
+def classify_row(ws: Blatt, row: int) -> str:
     """'fach' | 'zustand' | 'stand' | 'jahrgang' | 'other'"""
     val = ws.cell(row, 1).value
     if val == "Fach":
@@ -122,7 +130,7 @@ def classify_row(ws, row: int) -> str:
     return "other"
 
 
-def extract_grade(ws, row: int) -> int | None:
+def extract_grade(ws: Blatt, row: int) -> int | None:
     val = ws.cell(row, 1).value
     m = re.match(r"Jahrgang\s+(\d+)", str(val)) if val else None
     return int(m.group(1)) if m else None
@@ -223,7 +231,7 @@ class Grid:
 
 # ── Parser ────────────────────────────────────────────────────────────────────
 
-def find_blocks(ws, zustand_rows: list[int], max_col: int) -> list[tuple[int, int]]:
+def find_blocks(ws: Blatt, zustand_rows: list[int], max_col: int) -> list[tuple[int, int]]:
     """Fachbloecke als (erste Spalte, letzte Spalte).
 
     Ein Block beginnt an jeder Spalte mit Zustand 'Angemeldet' und endet vor der
@@ -245,7 +253,9 @@ def find_blocks(ws, zustand_rows: list[int], max_col: int) -> list[tuple[int, in
     ]
 
 
-def _blocked_refs(ws, blocks: list[tuple[int, int]], jahrgang_rows: set[int]) -> tuple[set[str], list[str]]:
+def _blocked_refs(
+    ws: Blatt, blocks: list[tuple[int, int]], jahrgang_rows: set[int]
+) -> tuple[set[str], list[str]]:
     """Sperrflaechen: Merges ueber die volle Blockbreite in Jahrgangszeilen.
 
     Rueckgabe: (Menge aller ueberdeckten Zellreferenzen, sortierte Ankerliste).
@@ -268,7 +278,7 @@ def _blocked_refs(ws, blocks: list[tuple[int, int]], jahrgang_rows: set[int]) ->
     return covered, sorted(anchors)
 
 
-def parse_grid(ws, *, skip_blocked: bool = True, debug: Debug = None) -> Grid:
+def parse_grid(ws: Blatt, *, skip_blocked: bool = True, debug: Debug = None) -> Grid:
     """Liest die Struktur des Bestandsblatts. Kein Netz, kein Schreiben.
 
     ``skip_blocked=False`` schaltet Regel 4 ab und laesst Sperrflaechen wie
@@ -369,14 +379,16 @@ def parse_grid(ws, *, skip_blocked: bool = True, debug: Debug = None) -> Grid:
     )
 
 
-def _span_rows(ws, row: int, col: int) -> tuple[int, ...]:
+def _span_rows(ws: Blatt, row: int, col: int) -> tuple[int, ...]:
     merged = merged_range_at(ws, row, col)
     if merged is None:
         return (row,)
     return tuple(range(merged.min_row, merged.max_row + 1))
 
 
-def _build_entries(ws, cells: list[GridCell], blocks: list[tuple[int, int]]) -> tuple[GridEntry, ...]:
+def _build_entries(
+    ws: Blatt, cells: list[GridCell], blocks: list[tuple[int, int]]
+) -> tuple[GridEntry, ...]:
     """Fasst die Zellen zu Listenzeilen zusammen; die Bestand-Spalte gruppiert.
 
     Der Merge der Bestand-Zelle definiert das Jahrgangsband. Angemeldet bleibt je

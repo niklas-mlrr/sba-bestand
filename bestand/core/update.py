@@ -18,7 +18,12 @@ from typing import Any, Callable, Optional
 from ausleihe.inventory_excel import match_book
 from openpyxl.utils import get_column_letter, range_boundaries
 
-from .grid import SKIP_NO_FACH, SKIP_NO_ZUSTAND, Grid, GridCell
+from .config import BestandConfig
+from .grid import SKIP_NO_FACH, SKIP_NO_ZUSTAND, Blatt, Grid, GridCell
+from .iserv import Snapshot
+
+# Wie ``Blatt`` (siehe grid.py): openpyxl liefert kein py.typed.
+Mappe = Any  # openpyxl.workbook.workbook.Workbook
 
 try:
     import isbnlib as _isbnlib
@@ -30,7 +35,7 @@ try:
         except Exception:
             return isbn
 except ImportError:  # pragma: no cover - isbnlib ist eine harte Abhaengigkeit
-    def format_isbn(isbn: str) -> str:  # type: ignore[misc]
+    def format_isbn(isbn: str) -> str:
         return isbn
 
 
@@ -88,7 +93,7 @@ class UpdateResult:
         return not self.diagnostics
 
 
-def load_bestellt_counts(ws_bestellt) -> tuple[dict[str, int], list[str]]:
+def load_bestellt_counts(ws_bestellt: Blatt) -> tuple[dict[str, int], list[str]]:
     """Liest Blatt 'bestellt': Spalte F = ISBN (evtl. mit '-'), Spalte C = Stueckzahl.
 
     Gibt pro normierter ISBN (ohne '-') die Summe aller Stueckzahlen zurueck.
@@ -125,10 +130,10 @@ def _entry_key(grid: Grid, cell: GridCell) -> str | None:
 
 
 def apply_snapshot(
-    ws,
+    ws: Blatt,
     grid: Grid,
-    snapshot,
-    config,
+    snapshot: Snapshot,
+    config: BestandConfig,
     *,
     bestellt_counts: dict[str, int] | None = None,
     result: UpdateResult | None = None,
@@ -216,6 +221,18 @@ def apply_snapshot(
 
         isbn = book["isbn"]
         zustand = cell.zustand
+        if zustand is None:
+            # Unerreichbar, solange parse_grid ``zustand=None`` nur zusammen mit
+            # einem ``skip_reason`` setzt (SKIP_NO_ZUSTAND beim fehlenden Label,
+            # SKIP_ZUSTAND_NOT_WRITABLE beim leeren) - beide Faelle haben die
+            # Waechter oben schon aussortiert. Steht hier, weil die Invariante
+            # zwei Module ueberspannt und ``processed_enrollment`` sie annimmt:
+            # ohne diese Zeile waere sein Schluessel
+            # ``tuple[int, str, str | None]``, und ein parse_grid, das den
+            # Zustand irgendwann ohne skip_reason leer laesst, zaehlte hier
+            # still eine None-Zeile mit statt aufzufallen.
+            _dbg(f"    Sp.{letter}: kein Zustand trotz skip_reason=None → skip")
+            continue
         if zustand == "bestand":
             if isbn in processed_bestand_isbns:
                 _dbg(f"    Sp.{letter}: isbn={isbn}/Bestand bereits eingetragen → skip")
@@ -285,20 +302,45 @@ def apply_snapshot(
     return res
 
 
-def write_stand(ws, grid: Grid, when: datetime, result: UpdateResult) -> UpdateResult:
-    """Traegt den Abfragezeitpunkt in Spalte B jeder erkannten 'Stand'-Zeile ein."""
+def write_stand(
+    ws: Blatt, grid: Grid, when: datetime | None, result: UpdateResult
+) -> UpdateResult:
+    """Traegt den Abfragezeitpunkt in Spalte B jeder erkannten 'Stand'-Zeile ein.
+
+    ``when=None`` heisst "nimm ``result.stand``" - den Zeitpunkt, den
+    :func:`apply_snapshot` dort in jedem Fall hinterlaesst
+    (``res.stand = stand or snapshot.fetched_at``). Der Parameter nimmt
+    ``None`` an, weil beide Aufrufer ``write_stand(ws, grid, result.stand,
+    result)`` schreiben und ``UpdateResult.stand`` als Feld mit Default
+    ``datetime | None`` sein *muss*: eine frisch gebaute ``UpdateResult``
+    (das Dashboard baut eine, um die Diagnosen von ``load_bestellt_counts``
+    hineinzureichen) hat noch keinen Stand. Ohne diese Zeile meldete mypy den
+    Aufruf an genau drei Stellen - hier, in ``update_bestand_auto.py`` und in
+    ``sba-dashboard/app/refresh.py`` - als Typfehler, obwohl keine davon je
+    ``None`` durchreicht.
+    """
     from .grid import resolve_anchor
+
+    zeitpunkt = when if when is not None else result.stand
+    if zeitpunkt is None:
+        # Erreichbar nur bei Fehlgebrauch: write_stand mit einer UpdateResult,
+        # die nie durch apply_snapshot lief. Lieber hier laut, als eine leere
+        # Stand-Zelle in die Mappe zu schreiben.
+        raise ValueError(
+            "write_stand braucht einen Zeitpunkt: 'when' ist None und "
+            "result.stand ist leer - lief diese UpdateResult durch apply_snapshot?"
+        )
 
     for stand_row in grid.stand_rows:
         anchor_row, anchor_col = resolve_anchor(ws, stand_row, 2)  # Spalte B
         cell = ws.cell(anchor_row, anchor_col)
         ref = f"{get_column_letter(anchor_col)}{anchor_row}"
         old_val = cell.value
-        cell.value = when                        # echtes datetime (Excel-Datumswert)
+        cell.value = zeitpunkt                   # echtes datetime (Excel-Datumswert)
         cell.number_format = STAND_NUMBER_FORMAT  # Anzeige: TTTT, TT.MM.JJJJ hh:mm:ss
         result.changes.append(CellChange(
-            ref=ref, old=old_val, new=when, note="Stand/Abfragezeitpunkt",
-            new_display=when.strftime("%d.%m.%Y %H:%M:%S"),
+            ref=ref, old=old_val, new=zeitpunkt, note="Stand/Abfragezeitpunkt",
+            new_display=zeitpunkt.strftime("%d.%m.%Y %H:%M:%S"),
         ))
     return result
 
@@ -311,7 +353,7 @@ _SUBTOTAL_FUNC = {
 }
 
 
-def _norm_isbn(value) -> str:
+def _norm_isbn(value: Any) -> str:
     return re.sub(r"[^0-9Xx]", "", str(value)) if value is not None else ""
 
 
@@ -342,7 +384,9 @@ def compute_zu_bestellen_rows(
     return rows
 
 
-def rebuild_zu_bestellen(wb, result: UpdateResult, snapshot, safety_stock: int) -> list[ZuBestellenRow]:
+def rebuild_zu_bestellen(
+    wb: Mappe, result: UpdateResult, snapshot: Snapshot, safety_stock: int
+) -> list[ZuBestellenRow]:
     """Baut das Blatt 'zu Bestellen' neu auf und passt die Tabellengeometrie an.
 
     Der Tabellenname wird dynamisch gelesen - er kann sich aendern. Vorhandene

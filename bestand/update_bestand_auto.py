@@ -24,6 +24,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Any, Callable
 
 _HERE = Path(__file__).parent
 _ROOT = _HERE.parent
@@ -71,7 +72,7 @@ from bestand.core import (  # noqa: E402
 SKIP_BLOCKED = True
 
 
-def _progress_printer(sy_id: str):
+def _progress_printer(sy_id: str) -> Callable[[str, dict], None]:
     """Bildet die Fortschritts-Ereignisse des Kerns auf die bisherigen Zeilen ab."""
     texte = {
         EV_BOOKLISTS: lambda p: "Lade Bücherlisten...",
@@ -91,7 +92,7 @@ def _progress_printer(sy_id: str):
     return emit
 
 
-def main(argv: list[str] | None = None, *, client_factory=AusleiheClient) -> None:
+def main(argv: list[str] | None = None, *, client_factory: Any = AusleiheClient) -> None:
     parser = argparse.ArgumentParser(
         description="Auto-Befüllung der Bestandsliste anhand der Excel-Struktur"
     )
