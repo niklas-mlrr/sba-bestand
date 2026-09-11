@@ -755,26 +755,39 @@ class ConfirmationBlock(Flowable):
     # Abstand zwischen dem einleitenden Satz und der ersten Ankreuzzeile.
     INTRO_GAP = 2 * mm
 
-    def __init__(self, subject: str, schoolyear_id: str, *, teacher_kuerzel: str | None = None) -> None:
+    def __init__(
+        self, subject: str, schoolyear_id: str, book_count: int, *,
+        teacher_kuerzel: str | None = None,
+    ) -> None:
         super().__init__()
         self.width = CONTENT_WIDTH
         signature_label = f"Unterschrift Fachkonferenzleitung {subject}"
         if teacher_kuerzel:
             signature_label += f" ({teacher_kuerzel})"
-        self._intro_par = Paragraph(
-            f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die oben "
-            f"aufgeführte <b>Bücherliste {subject}</b>, das heißt die durch ihre <b>ISBN</b> "
-            f"beschriebenen Bücher und deren zugeordnete <b>Klassenstufen</b>, für das "
-            f"<b>Schuljahr {schoolyear_id}</b>",
-            CONFIRM_STYLE,
-        )
+        if book_count == 1:
+            # Einzelnes Buch: Singular ("das ... Buch", "seine", "dessen")
+            # statt Plural ("die ... Bücher", "ihre", "deren").
+            intro_text = (
+                f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die oben "
+                f"aufgeführte <b>Bücherliste {subject}</b>, das heißt das durch seine "
+                f"<b>ISBN</b> beschriebene Buch und dessen zugeordnete <b>Klassenstufen</b>, "
+                f"für das <b>Schuljahr {schoolyear_id}</b>"
+            )
+        else:
+            intro_text = (
+                f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die oben "
+                f"aufgeführte <b>Bücherliste {subject}</b>, das heißt die durch ihre <b>ISBN</b> "
+                f"beschriebenen Bücher und deren zugeordnete <b>Klassenstufen</b>, für das "
+                f"<b>Schuljahr {schoolyear_id}</b>"
+            )
+        self._intro_par = Paragraph(intro_text, CONFIRM_STYLE)
         _, self._intro_h = self._intro_par.wrap(self.width, 0xFFFFFF)
 
         text_width = self.width - CHECKBOX_SIZE - 6
         self._checkbox_pars = [
             Paragraph(
                 "<b>nicht korrekt</b> ist und um die <b>handschriftlichen Anmerkungen</b> "
-                "(Durchstreichungen; Eintragungen neuer Bücher, Klassen, ...) "
+                "(Durchstreichungen, Eintragungen neuer Bücher, Klassen, ...) "
                 "verändert werden muss.",
                 CONFIRM_STYLE,
             ),
@@ -1018,8 +1031,11 @@ def subject_story(
         story.append(Paragraph("Keine selbst anzuschaffenden Bücher in diesem Fach.", EMPTY_STYLE))
 
     if confirmation:
+        book_count = len(tables["leih"]) + len(tables["kauf"])
         story.append(
-            BottomAnchor(ConfirmationBlock(subject, schoolyear_id, teacher_kuerzel=teacher_kuerzel))
+            BottomAnchor(
+                ConfirmationBlock(subject, schoolyear_id, book_count, teacher_kuerzel=teacher_kuerzel)
+            )
         )
 
     if duplex:
