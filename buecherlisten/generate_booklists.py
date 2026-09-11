@@ -261,11 +261,13 @@ CONFIRM_STYLE = ParagraphStyle(
 SIGNATURE_LABEL_STYLE = ParagraphStyle(
     "SignaturLabel", parent=STYLES["Normal"], fontName=BODY_FONT, fontSize=8, leading=10,
 )
-# Kantenlänge des quadratischen Ankreuzkästchens vor dem Bestätigungstext: es
-# reicht von der Versalhöhe der ersten Textzeile bis zur Grundlinie der
-# zweiten, misst also eine Zeilenhöhe plus die Cap-Height eines
-# Großbuchstabens (Helvetica laut AFM: 718/1000 der Schriftgröße).
-CHECKBOX_SIZE = CONFIRM_STYLE.leading + CONFIRM_STYLE.fontSize * 0.718
+# Cap-Height (Höhe eines Großbuchstabens) des Bestätigungstexts — Helvetica
+# laut AFM: 718/1000 der Schriftgröße.
+CONFIRM_CAP_HEIGHT = CONFIRM_STYLE.fontSize * 0.718
+# Kantenlänge des quadratischen Ankreuzkästchens vor dem Bestätigungstext:
+# etwa halb so hoch wie der zweizeilige Text daneben, auf einen glatten Wert
+# gerundet. Es sitzt mittig in diesen zwei Zeilen (siehe ConfirmationBlock).
+CHECKBOX_SIZE = 9.0
 # Höhe der Unterschriftslinie über dem Label (Platz für die handschriftliche
 # Unterschrift).
 SIGNATURE_LINE_HEIGHT = 10 * mm
@@ -831,12 +833,15 @@ class ConfirmationBlock(Flowable):
         y = self.height - self._intro_h - self.INTRO_GAP
         for par, par_h in zip(self._checkbox_pars, self._checkbox_heights):
             row_h = max(par_h, CHECKBOX_SIZE)
-            # Unterkante auf die Grundlinie der zweiten Textzeile; da
-            # CHECKBOX_SIZE eine Zeilenhöhe plus Cap-Height misst, trifft die
-            # Oberkante damit die Versalhöhe der ersten Zeile. reportlab setzt
-            # die erste Grundlinie fontSize unter die Paragraph-Oberkante
-            # (rl_config paraFontSizeHeightOffset=1, siehe Paragraph.drawPara).
-            box_bottom = y - CONFIRM_STYLE.fontSize - CONFIRM_STYLE.leading
+            # Mittig in dem Band, das die beiden Textzeilen aufspannen: von der
+            # Versalhöhe der ersten Zeile bis zur Grundlinie der zweiten.
+            # reportlab setzt die erste Grundlinie fontSize unter die
+            # Paragraph-Oberkante (rl_config paraFontSizeHeightOffset=1, siehe
+            # Paragraph.drawPara).
+            first_baseline = y - CONFIRM_STYLE.fontSize
+            band_top = first_baseline + CONFIRM_CAP_HEIGHT
+            band_bottom = first_baseline - CONFIRM_STYLE.leading
+            box_bottom = (band_top + band_bottom - CHECKBOX_SIZE) / 2
             c.rect(0, box_bottom, CHECKBOX_SIZE, CHECKBOX_SIZE)
             par.drawOn(c, CHECKBOX_SIZE + 6, y - par_h)
             y -= row_h + self.CHECKBOX_ROW_GAP
