@@ -298,15 +298,6 @@ def fmt_price(value: float | None) -> str:
     return f"{value:.2f}".replace(".", ",") + " €"
 
 
-def short_schoolyear(schoolyear_id: str) -> str:
-    # "2026/2027" -> "26/27", wie im Kopfbereich der offiziellen
-    # IServ-Bücherlisten-PDFs ("Liste für / Schuljahr 26/27").
-    parts = schoolyear_id.split("/")
-    if len(parts) == 2 and all(p.isdigit() for p in parts):
-        return "/".join(p[-2:] for p in parts)
-    return schoolyear_id
-
-
 def fmt_grades(grades: tuple[int, ...]) -> str:
     # Komma + Leerzeichen statt "/": erlaubt Zeilenumbruch in der schmalen
     # Klasse-Spalte, wenn ein Mehrjahresband viele Klassen abdeckt.
@@ -675,9 +666,9 @@ class SubjectHeading(Flowable):
     Höhe des Blocks, damit der Einleitungstext darunter beginnt.
     """
 
-    def __init__(self, schoolyear_id: str, subject: str, *, confirm_value: str | None = None) -> None:
+    def __init__(self, schoolyear_name: str, subject: str, *, confirm_value: str | None = None) -> None:
         super().__init__()
-        self.schoolyear_id = schoolyear_id
+        self.schoolyear_name = schoolyear_name
         self.subject = subject
         self.confirm_value = confirm_value
         self.width = CONTENT_WIDTH
@@ -700,7 +691,7 @@ class SubjectHeading(Flowable):
         c.setFont(HEADER_VALUE_FONT, HEADER_VALUE_SIZE)
         c.drawString(
             dx + LEFT_MARGIN, dy + HEADER_VALUE_BASELINE,
-            f"Schuljahr {short_schoolyear(self.schoolyear_id)}",
+            self.schoolyear_name,
         )
         c.drawRightString(dx + RIGHT_EDGE, dy + HEADER_VALUE_BASELINE, self.subject)
 
@@ -718,7 +709,7 @@ class SubjectHeading(Flowable):
             # Kürzel) notfalls verkleinern, damit nichts mit den beiden
             # Rand-Werten kollidiert (analog Fußzeile).
             left_val_w = c.stringWidth(
-                f"Schuljahr {short_schoolyear(self.schoolyear_id)}", HEADER_VALUE_FONT, HEADER_VALUE_SIZE,
+                self.schoolyear_name, HEADER_VALUE_FONT, HEADER_VALUE_SIZE,
             )
             right_val_w = c.stringWidth(self.subject, HEADER_VALUE_FONT, HEADER_VALUE_SIZE)
             left_end = dx + LEFT_MARGIN + left_val_w
@@ -758,7 +749,7 @@ class ConfirmationBlock(Flowable):
     INTRO_GAP = 2 * mm
 
     def __init__(
-        self, subject: str, schoolyear_id: str, book_count: int, grade_count: int | None = None, *,
+        self, subject: str, schoolyear_name: str, book_count: int, grade_count: int | None = None, *,
         teacher_kuerzel: str | None = None, confirm_page: int | None = None,
     ) -> None:
         super().__init__()
@@ -787,14 +778,14 @@ class ConfirmationBlock(Flowable):
                 f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die {location} "
                 f"aufgeführte <b>Bücherliste {subject}</b>, das heißt das durch seine "
                 f"<b>ISBN</b> beschriebene Buch und dessen zugeordnete <b>{klassenstufe_word}</b>, "
-                f"für das <b>Schuljahr {schoolyear_id}</b>"
+                f"für das <b>{schoolyear_name}</b>"
             )
         else:
             intro_text = (
                 f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die {location} "
                 f"aufgeführte <b>Bücherliste {subject}</b>, das heißt die durch ihre <b>ISBN</b> "
                 f"beschriebenen Bücher und deren zugeordnete <b>Klassenstufen</b>, für das "
-                f"<b>Schuljahr {schoolyear_id}</b>"
+                f"<b>{schoolyear_name}</b>"
             )
         self._intro_par = Paragraph(intro_text, CONFIRM_STYLE)
         _, self._intro_h = self._intro_par.wrap(self.width, 0xFFFFFF)
@@ -1007,7 +998,7 @@ class _RecordEndPage(Flowable):
 
 
 def subject_story(
-    subject: str, tables: dict[str, list[dict]], schoolyear_id: str, *,
+    subject: str, tables: dict[str, list[dict]], schoolyear_name: str, *,
     confirmation: bool = False, fkl_map: dict[str, str] | None = None,
     kollegium_map: dict[str, str] | None = None, duplex: bool = False,
     blank_pages: set[int] | None = None, confirmation_page_count: int | None = None,
@@ -1026,7 +1017,7 @@ def subject_story(
     if duplex:
         story.append(_RecordPage(start_page_holder))
     story += [
-        SubjectHeading(schoolyear_id, subject, confirm_value=confirm_value),
+        SubjectHeading(schoolyear_name, subject, confirm_value=confirm_value),
         Paragraph(
             f"Die folgenden Bücher können für das Fach {subject} über die Schule ausgeliehen werden. "
             "Bücher, die selbst anzuschaffen sind, werden gesondert in der zweiten Tabelle ausgewiesen.",
@@ -1057,7 +1048,7 @@ def subject_story(
         story.append(
             BottomAnchor(
                 ConfirmationBlock(
-                    subject, schoolyear_id, book_count, grade_count,
+                    subject, schoolyear_name, book_count, grade_count,
                     teacher_kuerzel=teacher_kuerzel, confirm_page=confirmation_page_count,
                 )
             )
@@ -1070,7 +1061,7 @@ def subject_story(
 
 
 def measure_subject_pages(
-    subjects: list[str], by_subject: dict[str, dict[str, list[dict]]], schoolyear_id: str, *,
+    subjects: list[str], by_subject: dict[str, dict[str, list[dict]]], schoolyear_name: str, *,
     confirmation: bool, fkl_map: dict[str, str], kollegium_map: dict[str, str],
 ) -> list[int]:
     """Baut alle Fächer einmal probeweise in einen verworfenen Speicherpuffer
@@ -1104,7 +1095,7 @@ def measure_subject_pages(
         story.append(_RecordPage(start_page_holder))
         story.extend(
             subject_story(
-                subject, by_subject[subject], schoolyear_id,
+                subject, by_subject[subject], schoolyear_name,
                 confirmation=confirmation, fkl_map=fkl_map, kollegium_map=kollegium_map, duplex=False,
             )
         )
@@ -1114,13 +1105,13 @@ def measure_subject_pages(
     return page_counts
 
 
-def footer_context(subject_or_label: str, schoolyear_id: str) -> str:
+def footer_context(subject_or_label: str, schoolyear_name: str) -> str:
     """Rechtsbündiger Fußzeilentext, Wort für Wort wie im Original-PDF
     aufgebaut ("<Schule>, <Ort> – Bücherliste <Kontext> (Schuljahr 26/27)") —
     nur der Kontext ist hier das Fach bzw. "Fächer" statt "Jahrgang X"."""
     return (
         f"{SCHOOL_NAME}, {SCHOOL_CITY} – Bücherliste {subject_or_label} "
-        f"(Schuljahr {short_schoolyear(schoolyear_id)})"
+        f"({schoolyear_name})"
     )
 
 
@@ -1243,7 +1234,7 @@ def write_pdf(
 
 def write_combined_confirmation_pdf(
     path: Path, subjects: list[str], by_subject: dict[str, dict[str, list[dict]]],
-    schoolyear_id: str, *, fkl_map: dict[str, str], kollegium_map: dict[str, str], title: str,
+    schoolyear_name: str, *, fkl_map: dict[str, str], kollegium_map: dict[str, str], title: str,
     duplex: bool = False, page_counts: list[int] | None = None,
 ) -> None:
     """Wie write_pdf, aber ein eigenes PageTemplate je Fach: mit --confirmation
@@ -1266,7 +1257,7 @@ def write_combined_confirmation_pdf(
             LEFT_MARGIN, BOTTOM_MARGIN, CONTENT_WIDTH, FRAME_TOP - BOTTOM_MARGIN,
             leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0, id=f"content-{i}",
         )
-        footer_center = footer_context(subject, schoolyear_id)
+        footer_center = footer_context(subject, schoolyear_name)
         template_id = f"fach-{i}"
         templates.append(
             PageTemplate(
@@ -1279,7 +1270,7 @@ def write_combined_confirmation_pdf(
             story.append(PageBreak())
         story.extend(
             subject_story(
-                subject, by_subject[subject], schoolyear_id,
+                subject, by_subject[subject], schoolyear_name,
                 confirmation=True, fkl_map=fkl_map, kollegium_map=kollegium_map, duplex=duplex,
                 blank_pages=blank_pages,
                 confirmation_page_count=page_counts[i] if page_counts else None,
@@ -1334,8 +1325,15 @@ def main() -> None:
 
     client = AusleiheClient(allow_writes=False)
 
-    schoolyear_id = args.schoolyear or client.schoolyears.get_current()["id"]
+    schoolyear_id = args.schoolyear or "current"
     try:
+        if args.schoolyear:
+            schoolyear_id = args.schoolyear
+            schoolyear_name = client.schoolyears.get_by_id(schoolyear_id)["name"]
+        else:
+            current = client.schoolyears.get_current()
+            schoolyear_id = current["id"]
+            schoolyear_name = current["name"]
         entries = collect_entries(client, schoolyear_id)
     except NotFoundError:
         print(f"Fehler: Schuljahr nicht gefunden: {schoolyear_id}", file=sys.stderr)
@@ -1428,7 +1426,7 @@ def main() -> None:
     page_counts: list[int] | None = None
     if args.duplex_if_needed or args.confirmation:
         page_counts = measure_subject_pages(
-            subjects, by_subject, schoolyear_id,
+            subjects, by_subject, schoolyear_name,
             confirmation=args.confirmation, fkl_map=fkl_map, kollegium_map=kollegium_map,
         )
     effective_duplex = args.duplex
@@ -1458,7 +1456,7 @@ def main() -> None:
             # (Fachkonferenzleitung) — Seitenzahl zählt daher je Fach neu, und
             # die Fußzeile nennt das jeweilige Fach statt pauschal "Fächer".
             write_combined_confirmation_pdf(
-                out_path, subjects, by_subject, schoolyear_id,
+                out_path, subjects, by_subject, schoolyear_name,
                 fkl_map=fkl_map, kollegium_map=kollegium_map, title=title,
                 duplex=effective_duplex, page_counts=page_counts,
             )
@@ -1472,12 +1470,12 @@ def main() -> None:
                     story.append(PageBreak())
                 story.extend(
                     subject_story(
-                        subject, by_subject[subject], schoolyear_id,
+                        subject, by_subject[subject], schoolyear_name,
                         confirmation=False, fkl_map=fkl_map, kollegium_map=kollegium_map,
                         duplex=effective_duplex, blank_pages=blank_pages,
                     )
                 )
-            footer_center = footer_context(label, schoolyear_id)
+            footer_center = footer_context(label, schoolyear_name)
             write_pdf(
                 out_path, story, title=title, footer_center=footer_center,
                 blank_pages=blank_pages,
@@ -1489,14 +1487,14 @@ def main() -> None:
             # blank_pages-Menge.
             blank_pages = set()
             story = subject_story(
-                subject, by_subject[subject], schoolyear_id,
+                subject, by_subject[subject], schoolyear_name,
                 confirmation=args.confirmation, fkl_map=fkl_map, kollegium_map=kollegium_map,
                 duplex=effective_duplex, blank_pages=blank_pages,
                 confirmation_page_count=page_counts[i] if page_counts else None,
             )
             out_path = out_dir / f"{title_prefix}Bücherliste {subject} {sy_label}.pdf"
             title = f"{title_prefix}Bücherliste {subject} {schoolyear_id}"
-            footer_center = footer_context(subject, schoolyear_id)
+            footer_center = footer_context(subject, schoolyear_name)
             write_pdf(
                 out_path, story, title=title, footer_center=footer_center,
                 blank_pages=blank_pages,
