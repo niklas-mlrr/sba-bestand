@@ -51,8 +51,8 @@ Verwendung:
                                   gelistet sind, kommen zuletzt, alphabetisch.
                                   Ist keine der beiden Quellen erreichbar,
                                   wird stattdessen alphabetisch sortiert.
-                                  Benannt "Bücherliste Fächer (nach
-                                  Aufgabenfeld) <Schuljahr>.pdf"
+                                  Ebenfalls benannt "Bücherliste Fächer
+                                  <Schuljahr>.pdf" (wie alphabet)
                    (Default: alphabet)
   --subjects       Nur diese Fächer aufnehmen (ein oder mehrere Namen, exakt
                     wie in der Bücherliste, z.B. --subjects Deutsch Mathematik).
@@ -66,7 +66,9 @@ Verwendung:
                     von der TRG-Website (Fachkonferenzleitungen) und zeigt den
                     Namen mittig in der Kopfzeile; schlägt der Abruf fehl oder
                     ist das Fach dort nicht gelistet, steht dort ersatzweise
-                    "Bestätigung".
+                    "Bestätigung". Hängt "Bestätigung " vor den Titel/
+                    Dateinamen (z.B. "Bestätigung Bücherliste Deutsch
+                    <Schuljahr>.pdf").
   --duplex         Für doppelseitigen Druck vorbereiten: jedes Fach bekommt
                     nötigenfalls eine leere Endseite, damit seine Seitenzahl
                     gerade ist (sonst würde beim doppelseitigen Druck das
@@ -1437,20 +1439,27 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     sy_label = sanitize_filename(schoolyear_id)
 
+    # --confirmation hängt "Bestätigung " vor den Titel/Dateinamen, damit ein
+    # Bestätigungs-Lauf die Datei eines normalen Laufs (im selben
+    # --output-dir) nicht überschreibt und Bestätigungs-PDFs im Ordner sofort
+    # als solche erkennbar sind.
+    title_prefix = "Bestätigung " if args.confirmation else ""
+
     if args.mode != "split":
         # alphabet/aufgabenfeld unterscheiden sich nur in der Fächer-Reihenfolge
-        # (siehe oben) — der Dateiname bekommt bei aufgabenfeld einen Zusatz,
-        # damit ein Lauf mit --mode alphabet die Datei eines vorherigen Laufs
-        # mit --mode aufgabenfeld (im selben --output-dir) nicht überschreibt.
+        # (siehe oben); die Fußzeile/der PDF-Titel nennen das bei aufgabenfeld
+        # weiterhin explizit, der Dateiname ist für beide Modi aber identisch
+        # ("Bücherliste Fächer <Schuljahr>.pdf").
         label = "Fächer" if args.mode == "alphabet" else "Fächer (nach Aufgabenfeld)"
-        out_path = out_dir / f"Bücherliste {label} {sy_label}.pdf"
+        out_path = out_dir / f"{title_prefix}Bücherliste Fächer {sy_label}.pdf"
+        title = f"{title_prefix}Bücherliste {label} {schoolyear_id}"
         if args.confirmation:
             # Bestätigungs-Vorlage ist pro Fach an eine reale Person adressiert
             # (Fachkonferenzleitung) — Seitenzahl zählt daher je Fach neu, und
             # die Fußzeile nennt das jeweilige Fach statt pauschal "Fächer".
             write_combined_confirmation_pdf(
                 out_path, subjects, by_subject, schoolyear_id,
-                fkl_map=fkl_map, kollegium_map=kollegium_map, title=f"Bücherliste {label} {schoolyear_id}",
+                fkl_map=fkl_map, kollegium_map=kollegium_map, title=title,
                 duplex=effective_duplex, page_counts=page_counts,
             )
         else:
@@ -1470,7 +1479,7 @@ def main() -> None:
                 )
             footer_center = footer_context(label, schoolyear_id)
             write_pdf(
-                out_path, story, title=f"Bücherliste {label} {schoolyear_id}", footer_center=footer_center,
+                out_path, story, title=title, footer_center=footer_center,
                 blank_pages=blank_pages,
             )
         print(f"PDF gespeichert: {out_path}")
@@ -1485,10 +1494,11 @@ def main() -> None:
                 duplex=effective_duplex, blank_pages=blank_pages,
                 confirmation_page_count=page_counts[i] if page_counts else None,
             )
-            out_path = out_dir / f"Bücherliste {subject} {sy_label}.pdf"
+            out_path = out_dir / f"{title_prefix}Bücherliste {subject} {sy_label}.pdf"
+            title = f"{title_prefix}Bücherliste {subject} {schoolyear_id}"
             footer_center = footer_context(subject, schoolyear_id)
             write_pdf(
-                out_path, story, title=f"Bücherliste {subject} {schoolyear_id}", footer_center=footer_center,
+                out_path, story, title=title, footer_center=footer_center,
                 blank_pages=blank_pages,
             )
             print(f"PDF gespeichert: {out_path}")
