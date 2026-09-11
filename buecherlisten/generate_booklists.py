@@ -758,7 +758,8 @@ class ConfirmationBlock(Flowable):
             signature_label += f" ({teacher_kuerzel})"
         self._intro_par = Paragraph(
             f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die oben "
-            f"aufgeführte Bücherliste {subject} mit Klassenstufen und ISBNs für das "
+            f"aufgeführte Bücherliste {subject}, das heißt die durch ihre ISBN "
+            f"beschriebenen Bücher und deren zugeordnete Klassenstufen, für das "
             f"Schuljahr {schoolyear_id}",
             CONFIRM_STYLE,
         )
