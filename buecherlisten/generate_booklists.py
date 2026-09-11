@@ -830,7 +830,12 @@ class ConfirmationBlock(Flowable):
         y = self.height - self._intro_h - self.INTRO_GAP
         for par, par_h in zip(self._checkbox_pars, self._checkbox_heights):
             row_h = max(par_h, CHECKBOX_SIZE)
-            c.rect(0, y - CHECKBOX_SIZE, CHECKBOX_SIZE, CHECKBOX_SIZE)
+            # Unterkante auf die Grundlinie der ersten Textzeile; da
+            # CHECKBOX_SIZE die Cap-Height ist, liegt die Oberkante damit genau
+            # auf der Versalhöhe. reportlab setzt die erste Grundlinie
+            # fontSize unter die Paragraph-Oberkante (rl_config
+            # paraFontSizeHeightOffset=1, siehe Paragraph.drawPara).
+            c.rect(0, y - CONFIRM_STYLE.fontSize, CHECKBOX_SIZE, CHECKBOX_SIZE)
             par.drawOn(c, CHECKBOX_SIZE + 6, y - par_h)
             y -= row_h + self.CHECKBOX_ROW_GAP
         self._sig_table.drawOn(c, 0, 0)
