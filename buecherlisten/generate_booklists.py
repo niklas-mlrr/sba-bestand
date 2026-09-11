@@ -814,7 +814,7 @@ class ConfirmationBlock(Flowable):
             ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
         ]))
         _, self._sig_h = self._sig_table.wrap(self.width, 0xFFFFFF)
-        self.height = self._intro_h + self.INTRO_GAP + checkbox_block_h + 8 * mm + self._sig_h
+        self.height = self._intro_h + self.INTRO_GAP + checkbox_block_h + self.CHECKBOX_ROW_GAP + self._sig_h
 
     def wrap(self, availWidth: float, availHeight: float) -> tuple[float, float]:
         return self.width, self.height
