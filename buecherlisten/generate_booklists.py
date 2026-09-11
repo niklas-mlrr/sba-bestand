@@ -265,7 +265,7 @@ SIGNATURE_LABEL_STYLE = ParagraphStyle(
 CHECKBOX_SIZE = 9.0
 # Höhe der Unterschriftslinie über dem Label (Platz für die handschriftliche
 # Unterschrift).
-SIGNATURE_LINE_HEIGHT = 14 * mm
+SIGNATURE_LINE_HEIGHT = 10 * mm
 
 # Titel/Verlag brechen um (Paragraph); alle anderen Spalten bleiben Klartext
 # in exakt passend berechneten Breiten (siehe render_table). splitLongWords=0
