@@ -763,9 +763,9 @@ class ConfirmationBlock(Flowable):
             signature_label += f" ({teacher_kuerzel})"
         self._intro_par = Paragraph(
             f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die oben "
-            f"aufgeführte Bücherliste {subject}, das heißt die durch ihre ISBN "
-            f"beschriebenen Bücher und deren zugeordnete Klassenstufen, für das "
-            f"Schuljahr {schoolyear_id}",
+            f"aufgeführte <b>Bücherliste {subject}</b>, das heißt die durch ihre <b>ISBN</b> "
+            f"beschriebenen Bücher und deren zugeordnete <b>Klassenstufen</b>, für das "
+            f"<b>Schuljahr {schoolyear_id}</b>",
             CONFIRM_STYLE,
         )
         _, self._intro_h = self._intro_par.wrap(self.width, 0xFFFFFF)
@@ -773,14 +773,14 @@ class ConfirmationBlock(Flowable):
         text_width = self.width - CHECKBOX_SIZE - 6
         self._checkbox_pars = [
             Paragraph(
-                "nicht korrekt ist und um die handschriftlichen Anmerkungen "
+                "<b>nicht korrekt</b> ist und um die <b>handschriftlichen Anmerkungen</b> "
                 "(Durchstreichungen; Eintragungen neuer Bücher, Klassen, ...) "
                 "verändert werden muss.",
                 CONFIRM_STYLE,
             ),
             Paragraph(
-                "korrekt ist, an die Schüler übermittelt werden kann und eine "
-                "nachträgliche Änderung unter Umständen nicht mehr gestattet werden "
+                "<b>korrekt</b> ist, <b>an</b> die <b>Schüler übermittelt</b> werden kann und eine "
+                "<b>nachträgliche Änderung</b> unter Umständen <b>nicht</b> mehr <b>gestattet</b> werden "
                 "kann.",
                 CONFIRM_STYLE,
             ),
