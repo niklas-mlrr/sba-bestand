@@ -757,13 +757,24 @@ class ConfirmationBlock(Flowable):
 
     def __init__(
         self, subject: str, schoolyear_id: str, book_count: int, grade_count: int | None = None, *,
-        teacher_kuerzel: str | None = None,
+        teacher_kuerzel: str | None = None, confirm_page: int | None = None,
     ) -> None:
         super().__init__()
         self.width = CONTENT_WIDTH
         signature_label = f"Unterschrift Fachkonferenzleitung {subject}"
         if teacher_kuerzel:
             signature_label += f" ({teacher_kuerzel})"
+        # Verweis auf die Tabelle(n) weiter oben: "oben", solange das Fach nur
+        # 1 Seite braucht; "umseitig", wenn die Bestätigung auf Seite 2 des
+        # Fachs landet (die Tabelle also komplett auf der vorigen Seite
+        # steht); ab Seite 3 "auf den vorliegenden Seiten" (Plural, da
+        # mehrere Seiten vorausgehen können).
+        if confirm_page is None or confirm_page <= 1:
+            location = "oben"
+        elif confirm_page == 2:
+            location = "umseitig"
+        else:
+            location = "auf den vorliegenden Seiten"
         if book_count == 1:
             # Einzelnes Buch: Singular ("das ... Buch", "seine", "dessen")
             # statt Plural ("die ... Bücher", "ihre", "deren"). Die
@@ -771,14 +782,14 @@ class ConfirmationBlock(Flowable):
             # einen Buch zugeordneten Klassenstufen, nicht nach der Bücherzahl.
             klassenstufe_word = "Klassenstufe" if grade_count == 1 else "Klassenstufen"
             intro_text = (
-                f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die oben "
+                f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die {location} "
                 f"aufgeführte <b>Bücherliste {subject}</b>, das heißt das durch seine "
                 f"<b>ISBN</b> beschriebene Buch und dessen zugeordnete <b>{klassenstufe_word}</b>, "
                 f"für das <b>Schuljahr {schoolyear_id}</b>"
             )
         else:
             intro_text = (
-                f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die oben "
+                f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die {location} "
                 f"aufgeführte <b>Bücherliste {subject}</b>, das heißt die durch ihre <b>ISBN</b> "
                 f"beschriebenen Bücher und deren zugeordnete <b>Klassenstufen</b>, für das "
                 f"<b>Schuljahr {schoolyear_id}</b>"
@@ -997,7 +1008,7 @@ def subject_story(
     subject: str, tables: dict[str, list[dict]], schoolyear_id: str, *,
     confirmation: bool = False, fkl_map: dict[str, str] | None = None,
     kollegium_map: dict[str, str] | None = None, duplex: bool = False,
-    blank_pages: set[int] | None = None,
+    blank_pages: set[int] | None = None, confirmation_page_count: int | None = None,
 ) -> list:
     confirm_value = None
     teacher_kuerzel = None
@@ -1044,7 +1055,8 @@ def subject_story(
         story.append(
             BottomAnchor(
                 ConfirmationBlock(
-                    subject, schoolyear_id, book_count, grade_count, teacher_kuerzel=teacher_kuerzel,
+                    subject, schoolyear_id, book_count, grade_count,
+                    teacher_kuerzel=teacher_kuerzel, confirm_page=confirmation_page_count,
                 )
             )
         )
@@ -1230,7 +1242,7 @@ def write_pdf(
 def write_combined_confirmation_pdf(
     path: Path, subjects: list[str], by_subject: dict[str, dict[str, list[dict]]],
     schoolyear_id: str, *, fkl_map: dict[str, str], kollegium_map: dict[str, str], title: str,
-    duplex: bool = False,
+    duplex: bool = False, page_counts: list[int] | None = None,
 ) -> None:
     """Wie write_pdf, aber ein eigenes PageTemplate je Fach: mit --confirmation
     soll die Seitenzahl je Fach wieder bei 1 beginnen und die Fußzeile das
@@ -1268,6 +1280,7 @@ def write_combined_confirmation_pdf(
                 subject, by_subject[subject], schoolyear_id,
                 confirmation=True, fkl_map=fkl_map, kollegium_map=kollegium_map, duplex=duplex,
                 blank_pages=blank_pages,
+                confirmation_page_count=page_counts[i] if page_counts else None,
             )
         )
     doc.addPageTemplates(templates)
@@ -1404,12 +1417,20 @@ def main() -> None:
                 file=sys.stderr,
             )
 
-    effective_duplex = args.duplex
-    if args.duplex_if_needed:
+    # Seitenzahlen je Fach werden für zwei Dinge gebraucht: --duplex-if-needed
+    # (Leerseiten nur einfügen, wenn mind. ein Fach mehr als 1 Seite braucht)
+    # und --confirmation (Verweis im Bestätigungssatz auf "oben"/"umseitig"/
+    # "auf den vorliegenden Seiten" je nachdem, wie viele Seiten die
+    # Bücherliste vor dem Bestätigungsblock einnimmt). Ein einziger Messlauf
+    # deckt beide Fälle ab.
+    page_counts: list[int] | None = None
+    if args.duplex_if_needed or args.confirmation:
         page_counts = measure_subject_pages(
             subjects, by_subject, schoolyear_id,
             confirmation=args.confirmation, fkl_map=fkl_map, kollegium_map=kollegium_map,
         )
+    effective_duplex = args.duplex
+    if args.duplex_if_needed:
         effective_duplex = any(count > 1 for count in page_counts)
 
     out_dir = Path(args.output_dir) if args.output_dir else _HERE
@@ -1430,7 +1451,7 @@ def main() -> None:
             write_combined_confirmation_pdf(
                 out_path, subjects, by_subject, schoolyear_id,
                 fkl_map=fkl_map, kollegium_map=kollegium_map, title=f"Bücherliste {label} {schoolyear_id}",
-                duplex=effective_duplex,
+                duplex=effective_duplex, page_counts=page_counts,
             )
         else:
             # Eine gemeinsame blank_pages-Menge über das ganze kombinierte
@@ -1454,7 +1475,7 @@ def main() -> None:
             )
         print(f"PDF gespeichert: {out_path}")
     else:
-        for subject in subjects:
+        for i, subject in enumerate(subjects):
             # Jedes Fach ist im split-Modus ein eigenes Dokument -> eigene
             # blank_pages-Menge.
             blank_pages = set()
@@ -1462,6 +1483,7 @@ def main() -> None:
                 subject, by_subject[subject], schoolyear_id,
                 confirmation=args.confirmation, fkl_map=fkl_map, kollegium_map=kollegium_map,
                 duplex=effective_duplex, blank_pages=blank_pages,
+                confirmation_page_count=page_counts[i] if page_counts else None,
             )
             out_path = out_dir / f"Bücherliste {subject} {sy_label}.pdf"
             footer_center = footer_context(subject, schoolyear_id)
