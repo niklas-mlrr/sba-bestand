@@ -261,8 +261,10 @@ CONFIRM_STYLE = ParagraphStyle(
 SIGNATURE_LABEL_STYLE = ParagraphStyle(
     "SignaturLabel", parent=STYLES["Normal"], fontName=BODY_FONT, fontSize=8, leading=10,
 )
-# Kantenlänge des Ankreuzkästchens vor dem Bestätigungstext.
-CHECKBOX_SIZE = 9.0
+# Kantenlänge des Ankreuzkästchens vor dem Bestätigungstext — so hoch wie ein
+# Großbuchstabe im Bestätigungstext (Cap-Height von Helvetica laut AFM:
+# 718/1000 der Schriftgröße).
+CHECKBOX_SIZE = CONFIRM_STYLE.fontSize * 0.718
 # Höhe der Unterschriftslinie über dem Label (Platz für die handschriftliche
 # Unterschrift).
 SIGNATURE_LINE_HEIGHT = 10 * mm
