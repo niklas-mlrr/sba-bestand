@@ -756,7 +756,7 @@ class ConfirmationBlock(Flowable):
     INTRO_GAP = 2 * mm
 
     def __init__(
-        self, subject: str, schoolyear_id: str, book_count: int, *,
+        self, subject: str, schoolyear_id: str, book_count: int, grade_count: int | None = None, *,
         teacher_kuerzel: str | None = None,
     ) -> None:
         super().__init__()
@@ -766,11 +766,14 @@ class ConfirmationBlock(Flowable):
             signature_label += f" ({teacher_kuerzel})"
         if book_count == 1:
             # Einzelnes Buch: Singular ("das ... Buch", "seine", "dessen")
-            # statt Plural ("die ... Bücher", "ihre", "deren").
+            # statt Plural ("die ... Bücher", "ihre", "deren"). Die
+            # Klassenstufe(n) richten sich dabei nach den tatsächlich diesem
+            # einen Buch zugeordneten Klassenstufen, nicht nach der Bücherzahl.
+            klassenstufe_word = "Klassenstufe" if grade_count == 1 else "Klassenstufen"
             intro_text = (
                 f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die oben "
                 f"aufgeführte <b>Bücherliste {subject}</b>, das heißt das durch seine "
-                f"<b>ISBN</b> beschriebene Buch und dessen zugeordnete <b>Klassenstufen</b>, "
+                f"<b>ISBN</b> beschriebene Buch und dessen zugeordnete <b>{klassenstufe_word}</b>, "
                 f"für das <b>Schuljahr {schoolyear_id}</b>"
             )
         else:
@@ -1032,9 +1035,17 @@ def subject_story(
 
     if confirmation:
         book_count = len(tables["leih"]) + len(tables["kauf"])
+        # Bei genau einem Buch entscheidet die Anzahl seiner Klassenstufen
+        # (Spalte "klasse", z.B. "5" oder "5, 6") über Singular/Plural.
+        grade_count = None
+        if book_count == 1:
+            only_row = (tables["leih"] or tables["kauf"])[0]
+            grade_count = only_row["klasse"].count(",") + 1
         story.append(
             BottomAnchor(
-                ConfirmationBlock(subject, schoolyear_id, book_count, teacher_kuerzel=teacher_kuerzel)
+                ConfirmationBlock(
+                    subject, schoolyear_id, book_count, grade_count, teacher_kuerzel=teacher_kuerzel,
+                )
             )
         )
 
