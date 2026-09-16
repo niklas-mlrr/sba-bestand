@@ -866,13 +866,10 @@ class ConfirmationBlock(Flowable):
     ggf. auf einer eigenen Folgeseite.
     """
 
-    # Abstand zwischen den beiden Ankreuzzeilen.
-    CHECKBOX_ROW_GAP = 4 * mm
-    # Abstand zwischen der zweiten Ankreuzzeile und dem Unterschriftsfeld
-    # darunter: Absatzabstand wie im Prüfauftrag (halbe Leerzeile).
-    SIGNATURE_GAP = CONFIRM_STYLE.leading / 2
-    # Abstand zwischen dem einleitenden Satz und der ersten Ankreuzzeile.
-    INTRO_GAP = 2 * mm
+    # Abstände zwischen einleitendem Satz, den beiden Ankreuzzeilen und dem
+    # Unterschriftsfeld: überall der Absatzabstand des Prüfauftrags (halbe
+    # Leerzeile, siehe INTRO_PART_STYLE).
+    INTRO_GAP = CHECKBOX_ROW_GAP = SIGNATURE_GAP = INTRO_PART_STYLE.spaceAfter
 
     def __init__(
         self, subject: str, schoolyear_name: str, book_count: int, grade_count: int | None = None, *,
