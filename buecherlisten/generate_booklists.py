@@ -164,7 +164,7 @@ from reportlab.lib.enums import TA_JUSTIFY  # noqa: E402
 from reportlab.lib.pagesizes import A4  # noqa: E402
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet  # noqa: E402
 from reportlab.lib.units import mm  # noqa: E402
-from reportlab.pdfbase.pdfmetrics import getAscent, stringWidth  # noqa: E402
+from reportlab.pdfbase.pdfmetrics import stringWidth  # noqa: E402
 from reportlab.pdfgen.canvas import Canvas  # noqa: E402
 from reportlab.platypus import (  # noqa: E402
     BaseDocTemplate,
@@ -202,17 +202,10 @@ HEADER_VALUE_BASELINE = PAGE_H - 56.02      # "Schuljahr 26/27" / "<Fach>"
 TITLE_FONT, TITLE_SIZE = "Helvetica-Bold", 24.0
 TITLE_BASELINE = PAGE_H - 105.73            # "Bücherliste <Fach>"
 
-# Zeilenabstand einer Kopf-Zeile (Label -> Wert darunter).
-HEADER_ROW_PITCH = HEADER_LABEL_BASELINE - HEADER_VALUE_BASELINE  # = 10.28
-# Höhe eines normalen Großbuchstabens der kleinen Kopf-Schrift ("Liste für").
-# Bei den Standard-Type-1-Fonts (Helvetica) ist der Ascent genau die
-# Versalhöhe (718/1000), also 5.744 pt bei 8 pt Schriftgröße.
-HEADER_LABEL_CAP_HEIGHT = getAscent(HEADER_LABEL_FONT, HEADER_LABEL_SIZE)
-# Der Rückgabe-Block (--confirmation, mittig unter dem Kürzel) lässt genau eine
-# kleine Zeile frei: Unterkante Kürzel -> Oberkante "Rückgabe ..." ist eine
-# Großbuchstaben-Höhe der kleinen Schrift, das Label selbst belegt die nächste.
-RETURN_LABEL_BASELINE = HEADER_VALUE_BASELINE - 2 * HEADER_LABEL_CAP_HEIGHT
-RETURN_VALUE_BASELINE = RETURN_LABEL_BASELINE - HEADER_ROW_PITCH
+# Mindestlücke zwischen den nebeneinander stehenden Kopf-Blöcken ("Liste für",
+# "Zu bestätigen durch", Rückgabe-Angaben, "gültig für"); wird sie unterschritten,
+# schrumpft die große Schrift der mittleren Blöcke (siehe SubjectHeading).
+MIN_HEADER_BLOCK_GAP = 6.0
 
 # Der Fließtext-Rahmen beginnt oben auf der Seite; der Kopf-/Titelblock wird
 # absolut positioniert gezeichnet und reserviert nur seine Höhe (siehe
@@ -704,51 +697,117 @@ class SubjectHeading(Flowable):
         """Spalten des Rückgabe-Blocks als (Label, Wert)-Paare.
 
         "Rückgabe" gehört immer zum ersten vorhandenen Wert: mit Datum heißen
-        die Labels "Rückgabe bis zum" / "an", fehlt das Datum, steht über dem
+        die Labels "Rückgabe bis" / "an", fehlt das Datum, steht über dem
         Kürzel "Rückgabe an". Fehlt ein Wert, entfällt seine Spalte ganz."""
         columns: list[tuple[str, str]] = []
         if self.return_by:
-            columns.append(("Rückgabe bis zum", self.return_by))
+            columns.append(("Rückgabe bis", self.return_by))
         if self.return_to:
             columns.append(("an" if self.return_by else "Rückgabe an", self.return_to))
         return columns
 
-    def _draw_return_block(self, c: Canvas, dx: float, dy: float) -> None:
-        """Datum und/oder Empfänger-Kürzel mittig unter dem Bestätigungs-Kürzel.
+    def _draw_middle_blocks(self, c: Canvas, dx: float, dy: float) -> None:
+        """"Zu bestätigen durch" und Rückgabe-Angaben zwischen den Rand-Spalten.
 
-        Die Werte stehen in der großen Kopf-Schrift ("Schuljahr .."/<Fach>),
-        getrennt durch zwei Leerzeichen dieser Schrift; darüber jeweils mittig
-        das Label in der kleinen Kopf-Schrift ("Liste für"/"Zu bestätigen
-        durch"). Beide Spalten zusammen sitzen mittig über die Breite. Eine
-        Spalte ist so breit wie ihr breiterer der beiden Texte, damit auch ein
-        langes Label nie in die Nachbarspalte ragt."""
-        columns = self._return_columns()
-        if not columns:
+        Beide stehen auf denselben beiden Grundlinien wie "Liste für"/
+        <Schuljahr> links und "gültig für"/<Fach> rechts: Label in der kleinen,
+        Wert in der großen Kopf-Schrift, Label jeweils mittig über seinem Wert.
+        Die vier Teile (links, Bestätigung, Rückgabe, rechts) bekommen
+        untereinander denselben Abstand — der nach allen Blockbreiten
+        verbleibende Platz wird gleichmäßig auf die drei Lücken verteilt. Wird
+        es eng (langer Fachname, langes Datum), schrumpft die große Schrift der
+        beiden mittleren Blöcke, bis die Lücken wieder mindestens
+        MIN_HEADER_BLOCK_GAP breit sind.
+
+        Der Rückgabe-Block selbst besteht aus bis zu zwei Spalten (Datum,
+        Kürzel), die untereinander nur zwei Leerzeichen der großen Schrift
+        Abstand halten — sie gehören sichtbar zusammen.
+
+        Ohne Rückgabe-Angaben bleibt die Bestätigung wie bisher mittig auf der
+        Seite (unveränderte Ausgabe für Läufe ohne --return-by/--return-to)."""
+        blocks = [[("Zu bestätigen durch", self.confirm_value)]]
+        return_columns = self._return_columns()
+        if not return_columns:
+            self._draw_centered_confirm(c, dx, dy)
             return
+        blocks.append(return_columns)
+
+        # Die Rand-Blöcke sind so breit wie ihr breiterer Text (Label oder
+        # Wert) — sie sind links- bzw. rechtsbündig gesetzt und rücken nicht.
+        left_w = max(
+            c.stringWidth("Liste für", HEADER_LABEL_FONT, HEADER_LABEL_SIZE),
+            c.stringWidth(self.schoolyear_name, HEADER_VALUE_FONT, HEADER_VALUE_SIZE),
+        )
+        right_w = max(
+            c.stringWidth("gültig für", HEADER_LABEL_FONT, HEADER_LABEL_SIZE),
+            c.stringWidth(self.subject, HEADER_VALUE_FONT, HEADER_VALUE_SIZE),
+        )
 
         value_fs = HEADER_VALUE_SIZE
         while True:
-            gap = c.stringWidth("  ", HEADER_VALUE_FONT, value_fs)
+            inner_gap = c.stringWidth("  ", HEADER_VALUE_FONT, value_fs)
             col_widths = [
-                max(
-                    c.stringWidth(value, HEADER_VALUE_FONT, value_fs),
-                    c.stringWidth(label, HEADER_LABEL_FONT, HEADER_LABEL_SIZE),
-                )
-                for label, value in columns
+                [
+                    max(
+                        c.stringWidth(value, HEADER_VALUE_FONT, value_fs),
+                        c.stringWidth(label, HEADER_LABEL_FONT, HEADER_LABEL_SIZE),
+                    )
+                    for label, value in block
+                ]
+                for block in blocks
             ]
-            total = sum(col_widths) + gap * (len(columns) - 1)
-            if total <= CONTENT_WIDTH or value_fs <= 7.0:
+            block_widths = [
+                sum(widths) + inner_gap * (len(widths) - 1) for widths in col_widths
+            ]
+            gap = (
+                CONTENT_WIDTH - left_w - right_w - sum(block_widths)
+            ) / (len(blocks) + 1)
+            if gap >= MIN_HEADER_BLOCK_GAP or value_fs <= 7.0:
                 break
             value_fs -= 0.25
 
-        x = dx + FOOTER_CENTER_X - total / 2
-        for (label, value), col_w in zip(columns, col_widths):
-            center = x + col_w / 2
-            c.setFont(HEADER_LABEL_FONT, HEADER_LABEL_SIZE)
-            c.drawCentredString(center, dy + RETURN_LABEL_BASELINE, label)
-            c.setFont(HEADER_VALUE_FONT, value_fs)
-            c.drawCentredString(center, dy + RETURN_VALUE_BASELINE, value)
-            x += col_w + gap
+        x = dx + LEFT_MARGIN + left_w
+        for block, widths in zip(blocks, col_widths):
+            x += gap
+            for (label, value), col_w in zip(block, widths):
+                center = x + col_w / 2
+                c.setFont(HEADER_LABEL_FONT, HEADER_LABEL_SIZE)
+                c.drawCentredString(center, dy + HEADER_LABEL_BASELINE, label)
+                c.setFont(HEADER_VALUE_FONT, value_fs)
+                c.drawCentredString(center, dy + HEADER_VALUE_BASELINE, value)
+                x += col_w + inner_gap
+            x -= inner_gap
+
+    def _draw_centered_confirm(self, c: Canvas, dx: float, dy: float) -> None:
+        """Nur "Zu bestätigen durch" + Kürzel, mittig auf der Seite.
+
+        Wert-Zeile: bei langem Fachnamen + langem Ersatzwert (Fallback: Name
+        statt Kürzel) notfalls verkleinern, damit nichts mit den beiden
+        Rand-Werten kollidiert (analog Fußzeile)."""
+        center_x = dx + FOOTER_CENTER_X
+
+        # Label-Zeile ("Liste für"/"gültig für"-Höhe): kurzer, fester
+        # Text — bei den üblichen Fach-/Jahr-Kürzeln links/rechts nie eng.
+        c.setFont(HEADER_LABEL_FONT, HEADER_LABEL_SIZE)
+        c.drawCentredString(center_x, dy + HEADER_LABEL_BASELINE, "Zu bestätigen durch")
+
+        left_val_w = c.stringWidth(
+            self.schoolyear_name, HEADER_VALUE_FONT, HEADER_VALUE_SIZE,
+        )
+        right_val_w = c.stringWidth(self.subject, HEADER_VALUE_FONT, HEADER_VALUE_SIZE)
+        left_end = dx + LEFT_MARGIN + left_val_w
+        right_start = dx + RIGHT_EDGE - right_val_w
+        max_half_width = max(min(center_x - left_end, right_start - center_x) - 6, 10)
+
+        center_fs = HEADER_VALUE_SIZE
+        while (
+            center_fs > 7.0
+            and c.stringWidth(self.confirm_value, HEADER_VALUE_FONT, center_fs) / 2 > max_half_width
+        ):
+            center_fs -= 0.25
+
+        c.setFont(HEADER_VALUE_FONT, center_fs)
+        c.drawCentredString(center_x, dy + HEADER_VALUE_BASELINE, self.confirm_value)
 
     def draw(self) -> None:
         c = self.canv
@@ -772,37 +831,7 @@ class SubjectHeading(Flowable):
         c.drawRightString(dx + RIGHT_EDGE, dy + HEADER_VALUE_BASELINE, self.subject)
 
         if self.confirm_value:
-            center_x = dx + FOOTER_CENTER_X
-            confirm_label = "Zu bestätigen durch"
-
-            # Label-Zeile ("Liste für"/"gültig für"-Höhe): kurzer, fester
-            # Text — bei den üblichen Fach-/Jahr-Kürzeln links/rechts nie eng.
-            c.setFont(HEADER_LABEL_FONT, HEADER_LABEL_SIZE)
-            c.drawCentredString(center_x, dy + HEADER_LABEL_BASELINE, confirm_label)
-
-            # Wert-Zeile ("Schuljahr .."/<Fach>-Höhe): Kürzel mittig — bei
-            # langem Fachnamen + langem Ersatzwert (Fallback: Name statt
-            # Kürzel) notfalls verkleinern, damit nichts mit den beiden
-            # Rand-Werten kollidiert (analog Fußzeile).
-            left_val_w = c.stringWidth(
-                self.schoolyear_name, HEADER_VALUE_FONT, HEADER_VALUE_SIZE,
-            )
-            right_val_w = c.stringWidth(self.subject, HEADER_VALUE_FONT, HEADER_VALUE_SIZE)
-            left_end = dx + LEFT_MARGIN + left_val_w
-            right_start = dx + RIGHT_EDGE - right_val_w
-            max_half_width = max(min(center_x - left_end, right_start - center_x) - 6, 10)
-
-            center_fs = HEADER_VALUE_SIZE
-            while (
-                center_fs > 7.0
-                and c.stringWidth(self.confirm_value, HEADER_VALUE_FONT, center_fs) / 2 > max_half_width
-            ):
-                center_fs -= 0.25
-
-            c.setFont(HEADER_VALUE_FONT, center_fs)
-            c.drawCentredString(center_x, dy + HEADER_VALUE_BASELINE, self.confirm_value)
-
-            self._draw_return_block(c, dx, dy)
+            self._draw_middle_blocks(c, dx, dy)
 
         c.setFont(TITLE_FONT, TITLE_SIZE)
         c.drawString(dx + LEFT_MARGIN, dy + TITLE_BASELINE, f"Bücherliste {self.subject}")
