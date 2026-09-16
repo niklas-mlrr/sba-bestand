@@ -265,6 +265,9 @@ INTRO_STYLE = ParagraphStyle(
     "Intro", parent=STYLES["Normal"], fontName=BODY_FONT, fontSize=10, leading=12.5,
     textColor=colors.black, spaceAfter=6 * mm,
 )
+# Absätze innerhalb einer mehrteiligen Einleitung: nur eine Leerzeile Abstand,
+# der volle INTRO_STYLE-Abstand folgt erst nach dem letzten Absatz.
+INTRO_PART_STYLE = ParagraphStyle("IntroTeil", parent=INTRO_STYLE, spaceAfter=INTRO_STYLE.leading)
 SECTION_STYLE = ParagraphStyle(
     "Abschnitt", parent=STYLES["Heading2"], fontName="Helvetica-Bold", fontSize=16,
     textColor=ACCENT_COLOR, spaceBefore=6 * mm, spaceAfter=3 * mm, leading=19,
@@ -1136,6 +1139,56 @@ def subject_story(
             INTRO_STYLE,
         ),
     ]
+    book_count = len(tables["leih"]) + len(tables["kauf"])
+    # Bei genau einem Buch entscheidet die Anzahl seiner Klassenstufen
+    # (Spalte "klasse", z.B. "5" oder "5, 6") über Singular/Plural.
+    grade_count = None
+    if book_count == 1:
+        only_row = (tables["leih"] or tables["kauf"])[0]
+        grade_count = only_row["klasse"].count(",") + 1
+    if confirmation:
+        # Bestätigungs-Lauf: statt des Einleitungssatzes ein Prüfauftrag an die
+        # Fachkonferenzleitung, dessen letzter Absatz auf die beiden
+        # Ankreuzfelder im ConfirmationBlock abgestimmt ist. Singular/Plural
+        # wie im ConfirmationBlock.
+        if book_count == 1:
+            klassenstufe_word = "Klassenstufe" if grade_count == 1 else "Klassenstufen"
+            books_text = (
+                "das durch seine <b>ISBN</b> beschriebene Buch und dessen zugeordnete "
+                f"<b>{klassenstufe_word}</b>"
+            )
+        else:
+            books_text = (
+                "die durch ihre <b>ISBN</b> beschriebenen Bücher und deren zugeordnete "
+                "<b>Klassenstufen</b>"
+            )
+        story[-1:] = [
+            Paragraph(
+                f"Bitte prüfen Sie als <b>Fachkonferenzleitung {subject}</b> im Namen der "
+                f"<b>Fachschaft {subject}</b> die folgende <b>Bücherliste {subject}</b>, das heißt "
+                f"{books_text} für das <b>{schoolyear_name}</b>.",
+                INTRO_PART_STYLE,
+            ),
+            Paragraph(
+                "Da ein Buch durch seine ISBN eindeutig beschrieben wird, kann der Titel vom "
+                "Originaltitel des Buches abweichen und gegebenenfalls auch im Nachhinein noch einmal "
+                "verändert werden, um z. B. Bücher für verschiedene Leistungsniveaus leichter "
+                "auseinanderhalten zu können. Die Leihgebühr dient nur der Information. Sie ergibt "
+                "sich aus dem Neupreis des Buches und der Anzahl der Jahrgänge, für die es "
+                "vorgesehen ist.",
+                INTRO_PART_STYLE,
+            ),
+            Paragraph(
+                "Bitte korrigieren Sie, falls ISBN falsch sind, falsche Klassenstufen zugeordnet "
+                "sind, neue Bücher angeschafft oder alte ausgemustert werden sollen, dies "
+                "handschriftlich und bestätigen Sie am Ende die Gültigkeit dieser Änderungen, oder "
+                "notieren Sie, falls gewünscht, handschriftlich Änderungsvorschläge für Buchtitel "
+                "und bestätigen Sie am Ende die Gültigkeit der Bücherliste. Beachten Sie bitte, dass "
+                "Änderungsvorschläge für Buchtitel gegebenenfalls nicht oder auch nur abgeändert "
+                "übernommen werden.",
+                INTRO_STYLE,
+            ),
+        ]
 
     story.append(Paragraph("Leihbare Bücher", SECTION_STYLE))
     if tables["leih"]:
@@ -1150,13 +1203,6 @@ def subject_story(
         story.append(Paragraph("Keine selbst anzuschaffenden Bücher in diesem Fach.", EMPTY_STYLE))
 
     if confirmation:
-        book_count = len(tables["leih"]) + len(tables["kauf"])
-        # Bei genau einem Buch entscheidet die Anzahl seiner Klassenstufen
-        # (Spalte "klasse", z.B. "5" oder "5, 6") über Singular/Plural.
-        grade_count = None
-        if book_count == 1:
-            only_row = (tables["leih"] or tables["kauf"])[0]
-            grade_count = only_row["klasse"].count(",") + 1
         story.append(
             BottomAnchor(
                 ConfirmationBlock(
