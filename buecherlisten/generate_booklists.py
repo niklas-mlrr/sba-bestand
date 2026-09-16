@@ -265,9 +265,13 @@ INTRO_STYLE = ParagraphStyle(
     "Intro", parent=STYLES["Normal"], fontName=BODY_FONT, fontSize=10, leading=12.5,
     textColor=colors.black, spaceAfter=6 * mm,
 )
-# Absätze innerhalb einer mehrteiligen Einleitung: nur eine Leerzeile Abstand,
-# der volle INTRO_STYLE-Abstand folgt erst nach dem letzten Absatz.
-INTRO_PART_STYLE = ParagraphStyle("IntroTeil", parent=INTRO_STYLE, spaceAfter=INTRO_STYLE.leading)
+# Prüfauftrag im Bestätigungs-Lauf: Blocksatz wie der Bestätigungstext.
+# Absätze innerhalb dieser mehrteiligen Einleitung haben nur eine Leerzeile
+# Abstand, der volle INTRO_STYLE-Abstand folgt erst nach dem letzten Absatz.
+INTRO_CONFIRM_STYLE = ParagraphStyle("IntroBestaetigung", parent=INTRO_STYLE, alignment=TA_JUSTIFY)
+INTRO_PART_STYLE = ParagraphStyle(
+    "IntroTeil", parent=INTRO_CONFIRM_STYLE, spaceAfter=INTRO_STYLE.leading,
+)
 SECTION_STYLE = ParagraphStyle(
     "Abschnitt", parent=STYLES["Heading2"], fontName="Helvetica-Bold", fontSize=16,
     textColor=ACCENT_COLOR, spaceBefore=6 * mm, spaceAfter=3 * mm, leading=19,
@@ -1153,20 +1157,14 @@ def subject_story(
         # wie im ConfirmationBlock.
         if book_count == 1:
             klassenstufe_word = "Klassenstufe" if grade_count == 1 else "Klassenstufen"
-            books_text = (
-                "das durch seine <b>ISBN</b> beschriebene Buch und dessen zugeordnete "
-                f"<b>{klassenstufe_word}</b>"
-            )
+            books_text = f"das durch seine ISBN beschriebene Buch und dessen zugeordnete {klassenstufe_word}"
         else:
-            books_text = (
-                "die durch ihre <b>ISBN</b> beschriebenen Bücher und deren zugeordnete "
-                "<b>Klassenstufen</b>"
-            )
+            books_text = "die durch ihre ISBN beschriebenen Bücher und deren zugeordnete Klassenstufen"
         story[-1:] = [
             Paragraph(
-                f"Bitte prüfen Sie als <b>Fachkonferenzleitung {subject}</b> im Namen der "
-                f"<b>Fachschaft {subject}</b> die folgende <b>Bücherliste {subject}</b>, das heißt "
-                f"{books_text} für das <b>{schoolyear_name}</b>.",
+                f"Bitte prüfen Sie als Fachkonferenzleitung {subject} im Namen der "
+                f"Fachschaft {subject} die folgende Bücherliste {subject}, das heißt "
+                f"{books_text} für das {schoolyear_name}.",
                 INTRO_PART_STYLE,
             ),
             Paragraph(
@@ -1186,7 +1184,7 @@ def subject_story(
                 "und bestätigen Sie am Ende die Gültigkeit der Bücherliste. Beachten Sie bitte, dass "
                 "Änderungsvorschläge für Buchtitel gegebenenfalls nicht oder auch nur abgeändert "
                 "übernommen werden.",
-                INTRO_STYLE,
+                INTRO_CONFIRM_STYLE,
             ),
         ]
 
