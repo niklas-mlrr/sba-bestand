@@ -270,19 +270,23 @@ SECTION_STYLE = ParagraphStyle(
     textColor=ACCENT_COLOR, spaceBefore=6 * mm, spaceAfter=3 * mm, leading=19,
 )
 EMPTY_STYLE = ParagraphStyle("Leer", parent=STYLES["Normal"], fontSize=9, textColor=GREY)
+# Schriftgröße und Zeilenabstand wie die Fließtexte ("Die folgenden Bücher
+# können …", "Zusätzlich werden pro Wahlbereich …") in den offiziellen
+# IServ-Jahrgangslisten: Helvetica 10 pt, Grundlinienabstand 9,25 pt
+# (nachgemessen 2026-09-16 an "Bücherliste Jahrgang 5.pdf").
 CONFIRM_STYLE = ParagraphStyle(
-    "Bestaetigung", parent=STYLES["Normal"], fontName=BODY_FONT, fontSize=9, leading=11.5,
+    "Bestaetigung", parent=STYLES["Normal"], fontName=BODY_FONT, fontSize=10, leading=9.25,
     alignment=TA_JUSTIFY,
 )
 # Prüfauftrag im Bestätigungs-Lauf: gesetzt wie der Bestätigungstext
 # (Schriftgröße, Zeilenabstand, Blocksatz), nach dem letzten Absatz aber mit
 # dem vollen INTRO_STYLE-Abstand zur Tabelle. Absätze innerhalb dieser
-# mehrteiligen Einleitung haben nur eine Leerzeile Abstand.
+# mehrteiligen Einleitung haben nur eine halbe Leerzeile Abstand.
 INTRO_CONFIRM_STYLE = ParagraphStyle(
     "IntroBestaetigung", parent=CONFIRM_STYLE, spaceAfter=INTRO_STYLE.spaceAfter,
 )
 INTRO_PART_STYLE = ParagraphStyle(
-    "IntroTeil", parent=INTRO_CONFIRM_STYLE, spaceAfter=CONFIRM_STYLE.leading,
+    "IntroTeil", parent=INTRO_CONFIRM_STYLE, spaceAfter=CONFIRM_STYLE.leading / 2,
 )
 SIGNATURE_LABEL_STYLE = ParagraphStyle(
     "SignaturLabel", parent=STYLES["Normal"], fontName=BODY_FONT, fontSize=8, leading=10,
