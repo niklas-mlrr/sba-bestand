@@ -270,12 +270,15 @@ SECTION_STYLE = ParagraphStyle(
     textColor=ACCENT_COLOR, spaceBefore=6 * mm, spaceAfter=3 * mm, leading=19,
 )
 EMPTY_STYLE = ParagraphStyle("Leer", parent=STYLES["Normal"], fontSize=9, textColor=GREY)
-# Schriftgröße und Zeilenabstand wie die Fließtexte ("Die folgenden Bücher
-# können …", "Zusätzlich werden pro Wahlbereich …") in den offiziellen
-# IServ-Jahrgangslisten: Helvetica 10 pt, Grundlinienabstand 9,25 pt
-# (nachgemessen 2026-09-16 an "Bücherliste Jahrgang 5.pdf").
+# Schriftgröße wie die Fließtexte ("Die folgenden Bücher können …") in den
+# offiziellen IServ-Jahrgangslisten: Helvetica 10 pt. Deren Zeilenabstand
+# (9,25 pt) ist aber so eng, dass Unter- und Oberlängen sich fast berühren.
+# 12,2 pt: vertikale Lücke zwischen dem tiefsten Punkt einer Zeile (g, -220)
+# und dem höchsten der nächsten (Ä, 901) = 12,2 - 11,21 = ~0,9 pt, also etwa
+# die mittlere horizontale Lücke zwischen zwei Buchstaben bei 10 pt
+# (gerendert gemessen 2026-09-16: ~0,9 pt über a-z, A-Z, äöü, ÄÖÜ, ß).
 CONFIRM_STYLE = ParagraphStyle(
-    "Bestaetigung", parent=STYLES["Normal"], fontName=BODY_FONT, fontSize=10, leading=9.25,
+    "Bestaetigung", parent=STYLES["Normal"], fontName=BODY_FONT, fontSize=10, leading=12.2,
     alignment=TA_JUSTIFY,
 )
 # Prüfauftrag im Bestätigungs-Lauf: gesetzt wie der Bestätigungstext
