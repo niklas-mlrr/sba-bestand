@@ -164,7 +164,7 @@ from reportlab.lib.enums import TA_JUSTIFY  # noqa: E402
 from reportlab.lib.pagesizes import A4  # noqa: E402
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet  # noqa: E402
 from reportlab.lib.units import mm  # noqa: E402
-from reportlab.pdfbase.pdfmetrics import stringWidth  # noqa: E402
+from reportlab.pdfbase.pdfmetrics import getAscent, stringWidth  # noqa: E402
 from reportlab.pdfgen.canvas import Canvas  # noqa: E402
 from reportlab.platypus import (  # noqa: E402
     BaseDocTemplate,
@@ -202,11 +202,16 @@ HEADER_VALUE_BASELINE = PAGE_H - 56.02      # "Schuljahr 26/27" / "<Fach>"
 TITLE_FONT, TITLE_SIZE = "Helvetica-Bold", 24.0
 TITLE_BASELINE = PAGE_H - 105.73            # "Bücherliste <Fach>"
 
-# Zeilenabstand einer Kopf-Zeile (Label -> Wert). Der Rückgabe-Block
-# (--confirmation, mittig unter dem Kürzel) hält genau eine solche Zeilenhöhe
-# Abstand zum Kürzel darüber, steht also eine Leerzeile tiefer.
+# Zeilenabstand einer Kopf-Zeile (Label -> Wert darunter).
 HEADER_ROW_PITCH = HEADER_LABEL_BASELINE - HEADER_VALUE_BASELINE  # = 10.28
-RETURN_LABEL_BASELINE = HEADER_VALUE_BASELINE - 2 * HEADER_ROW_PITCH
+# Höhe eines normalen Großbuchstabens der kleinen Kopf-Schrift ("Liste für").
+# Bei den Standard-Type-1-Fonts (Helvetica) ist der Ascent genau die
+# Versalhöhe (718/1000), also 5.744 pt bei 8 pt Schriftgröße.
+HEADER_LABEL_CAP_HEIGHT = getAscent(HEADER_LABEL_FONT, HEADER_LABEL_SIZE)
+# Der Rückgabe-Block (--confirmation, mittig unter dem Kürzel) lässt genau eine
+# kleine Zeile frei: Unterkante Kürzel -> Oberkante "Rückgabe ..." ist eine
+# Großbuchstaben-Höhe der kleinen Schrift, das Label selbst belegt die nächste.
+RETURN_LABEL_BASELINE = HEADER_VALUE_BASELINE - 2 * HEADER_LABEL_CAP_HEIGHT
 RETURN_VALUE_BASELINE = RETURN_LABEL_BASELINE - HEADER_ROW_PITCH
 
 # Der Fließtext-Rahmen beginnt oben auf der Seite; der Kopf-/Titelblock wird
