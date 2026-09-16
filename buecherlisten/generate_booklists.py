@@ -265,13 +265,6 @@ INTRO_STYLE = ParagraphStyle(
     "Intro", parent=STYLES["Normal"], fontName=BODY_FONT, fontSize=10, leading=12.5,
     textColor=colors.black, spaceAfter=6 * mm,
 )
-# Prüfauftrag im Bestätigungs-Lauf: Blocksatz wie der Bestätigungstext.
-# Absätze innerhalb dieser mehrteiligen Einleitung haben nur eine Leerzeile
-# Abstand, der volle INTRO_STYLE-Abstand folgt erst nach dem letzten Absatz.
-INTRO_CONFIRM_STYLE = ParagraphStyle("IntroBestaetigung", parent=INTRO_STYLE, alignment=TA_JUSTIFY)
-INTRO_PART_STYLE = ParagraphStyle(
-    "IntroTeil", parent=INTRO_CONFIRM_STYLE, spaceAfter=INTRO_STYLE.leading,
-)
 SECTION_STYLE = ParagraphStyle(
     "Abschnitt", parent=STYLES["Heading2"], fontName="Helvetica-Bold", fontSize=16,
     textColor=ACCENT_COLOR, spaceBefore=6 * mm, spaceAfter=3 * mm, leading=19,
@@ -280,6 +273,16 @@ EMPTY_STYLE = ParagraphStyle("Leer", parent=STYLES["Normal"], fontSize=9, textCo
 CONFIRM_STYLE = ParagraphStyle(
     "Bestaetigung", parent=STYLES["Normal"], fontName=BODY_FONT, fontSize=9, leading=11.5,
     alignment=TA_JUSTIFY,
+)
+# Prüfauftrag im Bestätigungs-Lauf: gesetzt wie der Bestätigungstext
+# (Schriftgröße, Zeilenabstand, Blocksatz), nach dem letzten Absatz aber mit
+# dem vollen INTRO_STYLE-Abstand zur Tabelle. Absätze innerhalb dieser
+# mehrteiligen Einleitung haben nur eine Leerzeile Abstand.
+INTRO_CONFIRM_STYLE = ParagraphStyle(
+    "IntroBestaetigung", parent=CONFIRM_STYLE, spaceAfter=INTRO_STYLE.spaceAfter,
+)
+INTRO_PART_STYLE = ParagraphStyle(
+    "IntroTeil", parent=INTRO_CONFIRM_STYLE, spaceAfter=CONFIRM_STYLE.leading,
 )
 SIGNATURE_LABEL_STYLE = ParagraphStyle(
     "SignaturLabel", parent=STYLES["Normal"], fontName=BODY_FONT, fontSize=8, leading=10,
