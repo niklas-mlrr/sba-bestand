@@ -33,7 +33,9 @@ Verwendung:
   python3 generate_booklists.py [--schoulyear 2026/2027]
                                  [--mode split|alphabet|aufgabenfeld]
                                  [--subjects "Fach1" "Fach2" ...] [--list-subjects]
-                                 [--output-dir PFAD] [--confirmation] [--duplex | --duplex-if-needed]
+                                 [--output-dir PFAD] [--confirmation]
+                                 [--return-by DATUM] [--return-to KÜRZEL]
+                                 [--duplex | --duplex-if-needed]
 
   --schoolyear     Schuljahr wie "2026/2027" (Default: laufendes Schuljahr)
   --mode           split       = eine PDF-Datei pro Fach,
@@ -69,6 +71,13 @@ Verwendung:
                     "Bestätigung". Hängt "Bestätigung " vor den Titel/
                     Dateinamen (z.B. "Bestätigung Bücherliste Deutsch
                     <Schuljahr>.pdf").
+  --return-by      Rückgabedatum, das mittig im Kopf unter dem Kürzel steht.
+                    Freier Text, also z.B. "08.09.2026" oder "Montag, den
+                    08.09.2026". Nur mit --confirmation wirksam.
+  --return-to      Kürzel, an das zurückgegeben wird; steht im Kopf neben dem
+                    Rückgabedatum. Fehlt das Datum, lautet das Label darüber
+                    "Rückgabe an" statt "an"; fehlt eines von beiden, entfällt
+                    es ganz. Nur mit --confirmation wirksam.
   --duplex         Für doppelseitigen Druck vorbereiten: jedes Fach bekommt
                     nötigenfalls eine leere Endseite, damit seine Seitenzahl
                     gerade ist (sonst würde beim doppelseitigen Druck das
@@ -192,6 +201,13 @@ HEADER_VALUE_FONT, HEADER_VALUE_SIZE = "Helvetica-Bold", 12.0
 HEADER_VALUE_BASELINE = PAGE_H - 56.02      # "Schuljahr 26/27" / "<Fach>"
 TITLE_FONT, TITLE_SIZE = "Helvetica-Bold", 24.0
 TITLE_BASELINE = PAGE_H - 105.73            # "Bücherliste <Fach>"
+
+# Zeilenabstand einer Kopf-Zeile (Label -> Wert). Der Rückgabe-Block
+# (--confirmation, mittig unter dem Kürzel) hält genau eine solche Zeilenhöhe
+# Abstand zum Kürzel darüber, steht also eine Leerzeile tiefer.
+HEADER_ROW_PITCH = HEADER_LABEL_BASELINE - HEADER_VALUE_BASELINE  # = 10.28
+RETURN_LABEL_BASELINE = HEADER_VALUE_BASELINE - 2 * HEADER_ROW_PITCH
+RETURN_VALUE_BASELINE = RETURN_LABEL_BASELINE - HEADER_ROW_PITCH
 
 # Der Fließtext-Rahmen beginnt oben auf der Seite; der Kopf-/Titelblock wird
 # absolut positioniert gezeichnet und reserviert nur seine Höhe (siehe
@@ -666,13 +682,68 @@ class SubjectHeading(Flowable):
     Höhe des Blocks, damit der Einleitungstext darunter beginnt.
     """
 
-    def __init__(self, schoolyear_name: str, subject: str, *, confirm_value: str | None = None) -> None:
+    def __init__(
+        self, schoolyear_name: str, subject: str, *, confirm_value: str | None = None,
+        return_by: str | None = None, return_to: str | None = None,
+    ) -> None:
         super().__init__()
         self.schoolyear_name = schoolyear_name
         self.subject = subject
         self.confirm_value = confirm_value
+        self.return_by = return_by
+        self.return_to = return_to
         self.width = CONTENT_WIDTH
         self.height = HEADING_BLOCK_HEIGHT
+
+    def _return_columns(self) -> list[tuple[str, str]]:
+        """Spalten des Rückgabe-Blocks als (Label, Wert)-Paare.
+
+        "Rückgabe" gehört immer zum ersten vorhandenen Wert: mit Datum heißen
+        die Labels "Rückgabe bis zum" / "an", fehlt das Datum, steht über dem
+        Kürzel "Rückgabe an". Fehlt ein Wert, entfällt seine Spalte ganz."""
+        columns: list[tuple[str, str]] = []
+        if self.return_by:
+            columns.append(("Rückgabe bis zum", self.return_by))
+        if self.return_to:
+            columns.append(("an" if self.return_by else "Rückgabe an", self.return_to))
+        return columns
+
+    def _draw_return_block(self, c: Canvas, dx: float, dy: float) -> None:
+        """Datum und/oder Empfänger-Kürzel mittig unter dem Bestätigungs-Kürzel.
+
+        Die Werte stehen in der großen Kopf-Schrift ("Schuljahr .."/<Fach>),
+        getrennt durch zwei Leerzeichen dieser Schrift; darüber jeweils mittig
+        das Label in der kleinen Kopf-Schrift ("Liste für"/"Zu bestätigen
+        durch"). Beide Spalten zusammen sitzen mittig über die Breite. Eine
+        Spalte ist so breit wie ihr breiterer der beiden Texte, damit auch ein
+        langes Label nie in die Nachbarspalte ragt."""
+        columns = self._return_columns()
+        if not columns:
+            return
+
+        value_fs = HEADER_VALUE_SIZE
+        while True:
+            gap = c.stringWidth("  ", HEADER_VALUE_FONT, value_fs)
+            col_widths = [
+                max(
+                    c.stringWidth(value, HEADER_VALUE_FONT, value_fs),
+                    c.stringWidth(label, HEADER_LABEL_FONT, HEADER_LABEL_SIZE),
+                )
+                for label, value in columns
+            ]
+            total = sum(col_widths) + gap * (len(columns) - 1)
+            if total <= CONTENT_WIDTH or value_fs <= 7.0:
+                break
+            value_fs -= 0.25
+
+        x = dx + FOOTER_CENTER_X - total / 2
+        for (label, value), col_w in zip(columns, col_widths):
+            center = x + col_w / 2
+            c.setFont(HEADER_LABEL_FONT, HEADER_LABEL_SIZE)
+            c.drawCentredString(center, dy + RETURN_LABEL_BASELINE, label)
+            c.setFont(HEADER_VALUE_FONT, value_fs)
+            c.drawCentredString(center, dy + RETURN_VALUE_BASELINE, value)
+            x += col_w + gap
 
     def draw(self) -> None:
         c = self.canv
@@ -726,6 +797,8 @@ class SubjectHeading(Flowable):
             c.setFont(HEADER_VALUE_FONT, center_fs)
             c.drawCentredString(center_x, dy + HEADER_VALUE_BASELINE, self.confirm_value)
 
+            self._draw_return_block(c, dx, dy)
+
         c.setFont(TITLE_FONT, TITLE_SIZE)
         c.drawString(dx + LEFT_MARGIN, dy + TITLE_BASELINE, f"Bücherliste {self.subject}")
         c.restoreState()
@@ -778,14 +851,14 @@ class ConfirmationBlock(Flowable):
                 f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die {location} "
                 f"aufgeführte <b>Bücherliste {subject}</b>, das heißt das durch seine "
                 f"<b>ISBN</b> beschriebene Buch und dessen zugeordnete <b>{klassenstufe_word}</b>, "
-                f"für das <b>{schoolyear_name}</b>"
+                f"für das <b>{schoolyear_name}</b> ..."
             )
         else:
             intro_text = (
                 f"Hiermit bestätige ich im Namen der Fachschaft {subject}, dass die {location} "
                 f"aufgeführte <b>Bücherliste {subject}</b>, das heißt die durch ihre <b>ISBN</b> "
                 f"beschriebenen Bücher und deren zugeordnete <b>Klassenstufen</b>, für das "
-                f"<b>{schoolyear_name}</b>"
+                f"<b>{schoolyear_name}</b> ..."
             )
         self._intro_par = Paragraph(intro_text, CONFIRM_STYLE)
         _, self._intro_h = self._intro_par.wrap(self.width, 0xFFFFFF)
@@ -793,13 +866,13 @@ class ConfirmationBlock(Flowable):
         text_width = self.width - CHECKBOX_SIZE - 6
         self._checkbox_pars = [
             Paragraph(
-                "<b>nicht korrekt</b> ist und um die <b>handschriftlichen Anmerkungen</b> "
+                "... <b>nicht korrekt</b> ist und um die <b>handschriftlichen Anmerkungen</b> "
                 "(Durchstreichungen, Eintragungen neuer Bücher, Klassen, ...) "
                 "verändert werden muss.",
                 CONFIRM_STYLE,
             ),
             Paragraph(
-                "<b>korrekt</b> ist, <b>an</b> die <b>Schüler übermittelt</b> werden kann und eine "
+                "... <b>korrekt</b> ist, <b>an</b> die <b>Schüler übermittelt</b> werden kann und eine "
                 "<b>nachträgliche Änderung</b> unter Umständen <b>nicht</b> mehr <b>gestattet</b> werden "
                 "kann.",
                 CONFIRM_STYLE,
@@ -1002,6 +1075,7 @@ def subject_story(
     confirmation: bool = False, fkl_map: dict[str, str] | None = None,
     kollegium_map: dict[str, str] | None = None, duplex: bool = False,
     blank_pages: set[int] | None = None, confirmation_page_count: int | None = None,
+    return_by: str | None = None, return_to: str | None = None,
 ) -> list:
     confirm_value = None
     teacher_kuerzel = None
@@ -1017,7 +1091,11 @@ def subject_story(
     if duplex:
         story.append(_RecordPage(start_page_holder))
     story += [
-        SubjectHeading(schoolyear_name, subject, confirm_value=confirm_value),
+        SubjectHeading(
+            schoolyear_name, subject, confirm_value=confirm_value,
+            return_by=return_by if confirmation else None,
+            return_to=return_to if confirmation else None,
+        ),
         Paragraph(
             f"Die folgenden Bücher können für das Fach {subject} über die Schule ausgeliehen werden. "
             "Bücher, die selbst anzuschaffen sind, werden gesondert in der zweiten Tabelle ausgewiesen.",
@@ -1063,6 +1141,7 @@ def subject_story(
 def measure_subject_pages(
     subjects: list[str], by_subject: dict[str, dict[str, list[dict]]], schoolyear_name: str, *,
     confirmation: bool, fkl_map: dict[str, str], kollegium_map: dict[str, str],
+    return_by: str | None = None, return_to: str | None = None,
 ) -> list[int]:
     """Baut alle Fächer einmal probeweise in einen verworfenen Speicherpuffer
     (kein Datei-Output), jedes mit eigenem, frisch beginnendem PageTemplate —
@@ -1097,6 +1176,7 @@ def measure_subject_pages(
             subject_story(
                 subject, by_subject[subject], schoolyear_name,
                 confirmation=confirmation, fkl_map=fkl_map, kollegium_map=kollegium_map, duplex=False,
+                return_by=return_by, return_to=return_to,
             )
         )
         story.append(_RecordEndPage(start_page_holder, page_counts, i))
@@ -1236,6 +1316,7 @@ def write_combined_confirmation_pdf(
     path: Path, subjects: list[str], by_subject: dict[str, dict[str, list[dict]]],
     schoolyear_name: str, *, fkl_map: dict[str, str], kollegium_map: dict[str, str], title: str,
     duplex: bool = False, page_counts: list[int] | None = None,
+    return_by: str | None = None, return_to: str | None = None,
 ) -> None:
     """Wie write_pdf, aber ein eigenes PageTemplate je Fach: mit --confirmation
     soll die Seitenzahl je Fach wieder bei 1 beginnen und die Fußzeile das
@@ -1274,6 +1355,7 @@ def write_combined_confirmation_pdf(
                 confirmation=True, fkl_map=fkl_map, kollegium_map=kollegium_map, duplex=duplex,
                 blank_pages=blank_pages,
                 confirmation_page_count=page_counts[i] if page_counts else None,
+                return_by=return_by, return_to=return_to,
             )
         )
     doc.addPageTemplates(templates)
@@ -1308,6 +1390,15 @@ def main() -> None:
     parser.add_argument(
         "--confirmation", action="store_true",
         help="Ankreuzfeld + Ort/Datum/Unterschrift Fachkonferenzleitung am Ende jeder Fach-Liste ergänzen",
+    )
+    parser.add_argument(
+        "--return-by", default=None, metavar="DATUM",
+        help='Rückgabedatum im Kopf der Bestätigung, frei formatierbar (z.B. "08.09.2026" '
+             'oder "Montag, den 08.09.2026"); nur mit --confirmation',
+    )
+    parser.add_argument(
+        "--return-to", default=None, metavar="KÜRZEL",
+        help="Kürzel, an das zurückgegeben wird, im Kopf der Bestätigung; nur mit --confirmation",
     )
     duplex_group = parser.add_mutually_exclusive_group()
     duplex_group.add_argument(
@@ -1428,6 +1519,7 @@ def main() -> None:
         page_counts = measure_subject_pages(
             subjects, by_subject, schoolyear_name,
             confirmation=args.confirmation, fkl_map=fkl_map, kollegium_map=kollegium_map,
+            return_by=args.return_by, return_to=args.return_to,
         )
     effective_duplex = args.duplex
     if args.duplex_if_needed:
@@ -1459,6 +1551,7 @@ def main() -> None:
                 out_path, subjects, by_subject, schoolyear_name,
                 fkl_map=fkl_map, kollegium_map=kollegium_map, title=title,
                 duplex=effective_duplex, page_counts=page_counts,
+                return_by=args.return_by, return_to=args.return_to,
             )
         else:
             # Eine gemeinsame blank_pages-Menge über das ganze kombinierte
@@ -1491,6 +1584,7 @@ def main() -> None:
                 confirmation=args.confirmation, fkl_map=fkl_map, kollegium_map=kollegium_map,
                 duplex=effective_duplex, blank_pages=blank_pages,
                 confirmation_page_count=page_counts[i] if page_counts else None,
+                return_by=args.return_by, return_to=args.return_to,
             )
             out_path = out_dir / f"{title_prefix}Bücherliste {subject} {sy_label}.pdf"
             title = f"{title_prefix}Bücherliste {subject} {schoolyear_id}"
