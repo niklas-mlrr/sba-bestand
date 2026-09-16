@@ -301,9 +301,9 @@ CONFIRM_CAP_HEIGHT = CONFIRM_STYLE.fontSize * 0.718
 # etwa halb so hoch wie der zweizeilige Text daneben, auf einen glatten Wert
 # gerundet. Es sitzt mittig in diesen zwei Zeilen (siehe ConfirmationBlock).
 CHECKBOX_SIZE = 9.0
-# Höhe der Unterschriftslinie über dem Label (Platz für die handschriftliche
-# Unterschrift).
-SIGNATURE_LINE_HEIGHT = 10 * mm
+# Freier Platz über den Unterschriftslinien für die handschriftliche
+# Unterschrift: zwei Schreibzeilen im Zeilenabstand des Bestätigungstexts.
+SIGNATURE_LINE_HEIGHT = 2 * CONFIRM_STYLE.leading
 
 # Titel/Verlag brechen um (Paragraph); alle anderen Spalten bleiben Klartext
 # in exakt passend berechneten Breiten (siehe render_table). splitLongWords=0
@@ -866,9 +866,11 @@ class ConfirmationBlock(Flowable):
     ggf. auf einer eigenen Folgeseite.
     """
 
-    # Abstand zwischen den beiden Ankreuzzeilen und zwischen der zweiten
-    # Ankreuzzeile und der Unterschriftszeile darunter.
+    # Abstand zwischen den beiden Ankreuzzeilen.
     CHECKBOX_ROW_GAP = 4 * mm
+    # Abstand zwischen der zweiten Ankreuzzeile und dem Unterschriftsfeld
+    # darunter: Absatzabstand wie im Prüfauftrag (halbe Leerzeile).
+    SIGNATURE_GAP = CONFIRM_STYLE.leading / 2
     # Abstand zwischen dem einleitenden Satz und der ersten Ankreuzzeile.
     INTRO_GAP = 2 * mm
 
@@ -963,7 +965,7 @@ class ConfirmationBlock(Flowable):
             ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
         ]))
         _, self._sig_h = self._sig_table.wrap(self.width, 0xFFFFFF)
-        self.height = self._intro_h + self.INTRO_GAP + checkbox_block_h + self.CHECKBOX_ROW_GAP + self._sig_h
+        self.height = self._intro_h + self.INTRO_GAP + checkbox_block_h + self.SIGNATURE_GAP + self._sig_h
 
     def wrap(self, availWidth: float, availHeight: float) -> tuple[float, float]:
         return self.width, self.height
