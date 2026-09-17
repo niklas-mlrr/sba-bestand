@@ -9,6 +9,7 @@ Umweg über eine Datei ausliefern kann.
 from __future__ import annotations
 
 import io
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO
@@ -232,6 +233,7 @@ def _max_word_width(values: list[str], *, font: str = BODY_FONT, size: float = C
 
 def _split_titel_verlag(
     titel_vals: list[str], verlag_vals: list[str], available: float,
+    zusatz_zeilen: list[int] | None = None,
 ) -> tuple[float, float, float, float]:
     """Titel/Verlag-Breite so wählen, dass die Tabelle insgesamt am wenigsten
     Zeilen braucht (= am kleinsten ist); bei Gleichstand die Aufteilung, die
@@ -241,6 +243,9 @@ def _split_titel_verlag(
     *_actual ist die nach dem Umbruch bei diesem Budget tatsächlich breiteste
     Zeile (meist etwas schmaler als das Budget, siehe "eine Spalte nur
     maximal so lang wie der längste Inhalt einer Zeile").
+
+    ``zusatz_zeilen`` sind die Zeilenzahlen einer dritten, bereits fest
+    umbrochenen Spalte je Zeile (siehe :func:`_split_drei`).
     """
     if not titel_vals:
         return 0.0, 0.0, 0.0, 0.0
@@ -266,10 +271,10 @@ def _split_titel_verlag(
         total_lines = 0
         max_titel_line = 0.0
         max_verlag_line = 0.0
-        for t, v in zip(titel_vals, verlag_vals):
+        for i, (t, v) in enumerate(zip(titel_vals, verlag_vals)):
             lt, mt = _wrap_info(t, w)
             lv, mv = _wrap_info(v, verlag_w)
-            total_lines += max(lt, lv)
+            total_lines += max(lt, lv) if zusatz_zeilen is None else max(lt, lv, zusatz_zeilen[i])
             max_titel_line = max(max_titel_line, mt)
             max_verlag_line = max(max_verlag_line, mv)
         key = (total_lines, max_titel_line + max_verlag_line)
@@ -282,10 +287,137 @@ def _split_titel_verlag(
     return titel_w, available - titel_w, titel_actual, verlag_actual
 
 
-def render_table(rows: list[dict], *, with_fee: bool) -> Table:
-    isbn_idx, neupreis_idx = 3, 4
-    n_cols = 6 if with_fee else 5
+def _breiten_kandidaten(values: list[str]) -> list[float]:
+    """Alle Breiten, bei denen sich der Umbruch einer Spalte ändern kann: die
+    Breiten jeder zusammenhängenden Wortfolge eines Werts."""
+    kandidaten = set()
+    for v in values:
+        woerter = v.split()
+        for a in range(len(woerter)):
+            for b in range(a + 1, len(woerter) + 1):
+                kandidaten.add(stringWidth(" ".join(woerter[a:b]), BODY_FONT, CELL_FONT_SIZE) + WIDTH_EPSILON)
+    return sorted(kandidaten)
+
+
+def _split_drei(
+    werte: tuple[list[str], list[str], list[str]], available: float,
+) -> tuple[float, float, float]:
+    """Wie :func:`_split_titel_verlag`, mit einer dritten umbrechenden Spalte.
+
+    Die dritte (z. B. Fach in der Jahrgangsliste) hat kurze Werte und damit nur
+    wenige sinnvolle Breiten; für jede wird der Rest wie bei zwei Spalten
+    aufgeteilt. Gewählt wird die Aufteilung mit den wenigsten Zeilen, bei
+    Gleichstand die schmalste. Rückgabe: tatsächliche Breiten in Spaltenfolge.
+    """
+    erste, zweite, dritte = werte
+    # Untergrenze ist hier nur das breiteste unteilbare Wort, nicht MIN_WRAP_COL:
+    # die Kandidaten sind gemessene Umbruchbreiten, und die kurzen Werte dieser
+    # Spalte liegen regelmäßig darunter ("Mathematik" ist schmaler als 20 mm).
+    minimum = _max_word_width(dritte)
+    natuerlich = _raw_width("", dritte)
+    best: tuple[tuple[int, float], tuple[float, float, float]] | None = None
+    for kandidat in [k for k in _breiten_kandidaten(dritte) if minimum <= k <= natuerlich] or [natuerlich]:
+        infos = [_wrap_info(v, kandidat) for v in dritte]
+        dritte_w = max((w for _, w in infos), default=0.0)
+        zeilen = [n for n, _ in infos]
+        _, _, erste_w, zweite_w = _split_titel_verlag(erste, zweite, available - dritte_w, zeilen)
+        gesamt = sum(
+            max(_wrap_info(a, erste_w)[0], _wrap_info(b, zweite_w)[0], n)
+            for a, b, n in zip(erste, zweite, zeilen)
+        )
+        key = (gesamt, erste_w + zweite_w + dritte_w)
+        if best is None or key < best[0]:
+            best = (key, (erste_w, zweite_w, dritte_w))
+    assert best is not None
+    return best[1]
+
+
+@dataclass(frozen=True)
+class Spalte:
+    """Eine Tabellenspalte. ``umbruch``: darf umbrechen (genau zwei je Tabelle).
+
+    ``kurz`` ist der Kopf, auf den abgekürzt wird, wenn nicht alles einzeilig
+    passt; ``kurz_nur_wenn_kopf_breiter`` kürzt nur, wenn der Kopf selbst
+    breiter ist als der breiteste Wert (sonst brächte es nichts).
+    """
+
+    key: str
+    kopf: str
+    umbruch: bool = False
+    kurz: str | None = None
+    kurz_nur_wenn_kopf_breiter: bool = False
+    # Dritte umbrechende Spalte mit kurzen Werten (Fach in der Jahrgangsliste):
+    # bricht nur um, wenn die Tabelle dadurch weniger Zeilen braucht.
+    nachrangig: bool = False
+    schrift: float = CELL_FONT_SIZE
+    rechts: bool = False
+
+
+KLASSE = Spalte("klasse", "Klasse", kurz="Kl.", kurz_nur_wenn_kopf_breiter=True)
+TITEL = Spalte("titel", "Titel", umbruch=True)
+VERLAG = Spalte("verlag", "Verlag", umbruch=True)
+ISBN = Spalte("isbn", "ISBN", schrift=ISBN_FONT_SIZE)
+NEUPREIS = Spalte("neupreis", "Neupreis", rechts=True)
+LEIHGEBUEHR = Spalte("leihgebuehr", "Leihgebühr", kurz="Leihgeb.", rechts=True)
+
+
+FACH = Spalte("fach", "Fach", umbruch=True)
+FACH_NACHRANGIG = Spalte("fach", "Fach", umbruch=True, nachrangig=True)
+
+
+@dataclass(frozen=True)
+class Listenart:
+    """Was eine Fach-, Verlags- und Jahrgangsliste unterscheidet: Texte und Spalten.
+
+    Kopf, Schrift, Abstände und Tabellenbild sind für alle gleich; die Texte
+    enthalten ``{name}`` für das Fach, den Verlag oder "Jahrgang N".
+    """
+
+    einleitung: str
+    leer_leih: str
+    leer_kauf: str
+    spalten: tuple[Spalte, ...]
+
+
+_ZWEITE_TABELLE = "Bücher, die selbst anzuschaffen sind, werden gesondert in der zweiten Tabelle ausgewiesen."
+FACH_LISTE = Listenart(
+    "Die folgenden Bücher können für das Fach {name} über die Schule ausgeliehen werden. "
+    + _ZWEITE_TABELLE,
+    "Keine leihbaren Bücher in diesem Fach.",
+    "Keine selbst anzuschaffenden Bücher in diesem Fach.",
+    (KLASSE, TITEL, VERLAG, ISBN, NEUPREIS, LEIHGEBUEHR),
+)
+# Verlag: der Verlag steht im Kopf, dafür das Fach - das neben dem Titel
+# umbrechen darf, weil fächerübergreifende Bücher mehrere Fächer tragen.
+VERLAG_LISTE = Listenart(
+    "Die folgenden Bücher des Verlags {name} können über die Schule ausgeliehen werden. "
+    + _ZWEITE_TABELLE,
+    "Keine leihbaren Bücher dieses Verlags.",
+    "Keine selbst anzuschaffenden Bücher dieses Verlags.",
+    (TITEL, FACH, KLASSE, ISBN, NEUPREIS, LEIHGEBUEHR),
+)
+# Jahrgang: Spalten wie in der IServ-Druckversion. Titel und Verlag brechen
+# um; das Fach nur, wenn es Zeilen spart ("Werte und Normen" hielt sonst die
+# ganze Spalte breit und brach dafür die Hälfte der Titel um).
+JAHRGANG_LISTE = Listenart(
+    "Die folgenden Bücher können für den {name} über die Schule ausgeliehen werden. "
+    + _ZWEITE_TABELLE,
+    "Keine leihbaren Bücher in diesem Jahrgang.",
+    "Keine selbst anzuschaffenden Bücher in diesem Jahrgang.",
+    (TITEL, FACH_NACHRANGIG, VERLAG, ISBN, NEUPREIS, LEIHGEBUEHR),
+)
+
+
+def render_table(rows: list[dict], *, with_fee: bool, spalten: tuple[Spalte, ...] | None = None) -> Table:
+    """Tabelle mit ``spalten`` (Default: die der Fachliste); ohne ``with_fee``
+    entfällt die Leihgebühr."""
+    if spalten is None:
+        spalten = (KLASSE, TITEL, VERLAG, ISBN, NEUPREIS, LEIHGEBUEHR)
+    spalten = tuple(sp for sp in spalten if with_fee or sp.key != "leihgebuehr")
+    n_cols = len(spalten)
     n_gaps = n_cols - 1
+    umbruch = [i for i, sp in enumerate(spalten) if sp.umbruch]
+    assert len(umbruch) in (2, 3), "zwei oder drei umbrechende Spalten"
 
     # Für jeden der n_gaps Zwischenräume wird vorab MIN_GAP reserviert, bevor
     # Spaltenbreiten überhaupt berechnet werden — sonst kann der nach Schritt 3
@@ -296,74 +428,65 @@ def render_table(rows: list[dict], *, with_fee: bool) -> Table:
     # mit mindestens MIN_GAP Luft pro Lücke in CONTENT_WIDTH.
     effective_width = CONTENT_WIDTH - MIN_GAP * n_gaps
 
-    klasse_vals = [r["klasse"] for r in rows]
-    titel_vals = [r["titel"] for r in rows]
-    verlag_vals = [r["verlag"] for r in rows]
-    isbn_vals = [r["isbn"] for r in rows]
-    neupreis_vals = [r["neupreis"] for r in rows]
-    leihgebuehr_vals = [r["leihgebuehr"] for r in rows] if with_fee else []
-
-    klasse_header = "Klasse"
-    leihgebuehr_header = "Leihgebühr"
+    werte = [[r[sp.key] for r in rows] for sp in spalten]
+    koepfe = [sp.kopf for sp in spalten]
 
     # 1) Passt alles einzeilig (jede Spalte auf ihre natürliche Breite,
-    #    Titel/Verlag inklusive) in die Tabellenbreite? Dann muss nichts
+    #    umbrechende Spalten inklusive) in die Tabellenbreite? Dann muss nichts
     #    umbrechen und nichts abgekürzt werden.
-    isbn_w = _raw_width("ISBN", isbn_vals, value_size=ISBN_FONT_SIZE)
-    neupreis_w = _raw_width("Neupreis", neupreis_vals)
-    natural_klasse_w = _raw_width(klasse_header, klasse_vals)
-    natural_leihgebuehr_w = _raw_width(leihgebuehr_header, leihgebuehr_vals) if with_fee else 0.0
-    natural_titel_w = _raw_width("Titel", titel_vals)
-    natural_verlag_w = _raw_width("Verlag", verlag_vals)
-    natural_total = (
-        natural_klasse_w + natural_titel_w + natural_verlag_w + isbn_w + neupreis_w + natural_leihgebuehr_w
-    )
+    breiten = [_raw_width(sp.kopf, werte[i], value_size=sp.schrift) for i, sp in enumerate(spalten)]
+    natural_total = sum(breiten)
 
-    if natural_total <= effective_width:
-        klasse_w, titel_w, verlag_w, leihgebuehr_w = (
-            natural_klasse_w, natural_titel_w, natural_verlag_w, natural_leihgebuehr_w,
-        )
-    else:
+    if natural_total > effective_width:
         # 2) Reicht nicht — zuerst Platz durch Abkürzen der Kopfzeilen
         #    zurückgewinnen: "Leihgebühr" wird immer zu "Leihgeb."; "Klasse"
         #    nur, wenn der Spaltentitel selbst breiter ist als der breiteste
         #    Klassen-Wert (sonst würde die Abkürzung nichts bringen).
-        if with_fee:
-            leihgebuehr_header = "Leihgeb."
-        klasse_data_w = max((stringWidth(v, BODY_FONT, CELL_FONT_SIZE) for v in klasse_vals), default=0.0)
-        if stringWidth(klasse_header, HEADER_FONT, CELL_FONT_SIZE) > klasse_data_w:
-            klasse_header = "Kl."
-        klasse_w = _raw_width(klasse_header, klasse_vals)
-        leihgebuehr_w = _raw_width(leihgebuehr_header, leihgebuehr_vals) if with_fee else 0.0
+        gekuerzt: list[int] = []
+        for i, sp in enumerate(spalten):
+            if sp.kurz is None:
+                continue
+            if sp.kurz_nur_wenn_kopf_breiter:
+                data_w = max((stringWidth(v, BODY_FONT, sp.schrift) for v in werte[i]), default=0.0)
+                if stringWidth(sp.kopf, HEADER_FONT, CELL_FONT_SIZE) <= data_w:
+                    continue
+            koepfe[i] = sp.kurz
+            gekuerzt.append(i)
+            breiten[i] = _raw_width(sp.kurz, werte[i], value_size=sp.schrift)
 
-        fixed_w = klasse_w + isbn_w + neupreis_w + leihgebuehr_w
+        fixed_w = sum(w for i, w in enumerate(breiten) if i not in umbruch)
         available_tv = effective_width - fixed_w
-        _, _, titel_w, verlag_w = _split_titel_verlag(titel_vals, verlag_vals, available_tv)
+        if len(umbruch) == 2:
+            erste_u, zweite_u = umbruch
+            _, _, breiten[erste_u], breiten[zweite_u] = _split_titel_verlag(
+                werte[erste_u], werte[zweite_u], available_tv,
+            )
+        else:
+            haupt = [i for i in umbruch if not spalten[i].nachrangig]
+            (dritte_u,) = [i for i in umbruch if spalten[i].nachrangig]
+            breiten[haupt[0]], breiten[haupt[1]], breiten[dritte_u] = _split_drei(
+                (werte[haupt[0]], werte[haupt[1]], werte[dritte_u]), available_tv,
+            )
 
-        # 2b) Abkürzungen zurücknehmen, wenn nach der Titel/Verlag-Aufteilung
-        #     wieder Platz dafür ist — zuerst "Klasse", danach (mit dem dann
-        #     schon etwas größeren Gesamtinhalt) "Leihgebühr". Erst danach
-        #     wird verteilt, damit die dadurch länger gewordenen Spalten in
-        #     der Gleichverteilung berücksichtigt sind.
-        total_now = klasse_w + titel_w + verlag_w + isbn_w + neupreis_w + leihgebuehr_w
-        if klasse_header == "Kl.":
-            full_klasse_w = _raw_width("Klasse", klasse_vals)
-            if total_now + (full_klasse_w - klasse_w) <= effective_width:
-                total_now += full_klasse_w - klasse_w
-                klasse_w = full_klasse_w
-                klasse_header = "Klasse"
-        if with_fee and leihgebuehr_header == "Leihgeb.":
-            full_leihgebuehr_w = _raw_width("Leihgebühr", leihgebuehr_vals)
-            if total_now + (full_leihgebuehr_w - leihgebuehr_w) <= effective_width:
-                total_now += full_leihgebuehr_w - leihgebuehr_w
-                leihgebuehr_w = full_leihgebuehr_w
-                leihgebuehr_header = "Leihgebühr"
+        # 2b) Abkürzungen zurücknehmen, wenn nach der Aufteilung der
+        #     umbrechenden Spalten wieder Platz dafür ist — in Spalten-
+        #     reihenfolge ("Klasse" vor "Leihgebühr"). Erst danach wird
+        #     verteilt, damit die dadurch länger gewordenen Spalten in der
+        #     Gleichverteilung berücksichtigt sind.
+        total_now = sum(breiten)
+        for i in gekuerzt:
+            sp = spalten[i]
+            voll_w = _raw_width(sp.kopf, werte[i], value_size=sp.schrift)
+            if total_now + (voll_w - breiten[i]) <= effective_width:
+                total_now += voll_w - breiten[i]
+                breiten[i] = voll_w
+                koepfe[i] = sp.kopf
 
     # 3) Restplatz gleichmäßig auf alle Spaltenzwischenräume verteilen —
     #    jede Spalte bleibt exakt so breit wie ihr tatsächlich benötigter
     #    Inhalt (keine Spalte länger als der längste Inhalt einer Zeile).
     #    Dank effective_width in Schritt 1/2 ist gap hier immer >= MIN_GAP.
-    total_content = klasse_w + titel_w + verlag_w + isbn_w + neupreis_w + leihgebuehr_w
+    total_content = sum(breiten)
     gap = max(CONTENT_WIDTH - total_content, 0.0) / n_gaps if n_gaps else 0.0
     half_gap = gap / 2
 
@@ -371,30 +494,17 @@ def render_table(rows: list[dict], *, with_fee: bool) -> Table:
     # Lücke (reportlab zieht das TableStyle-Padding von colWidth ab, um die
     # Textfläche zu bestimmen — reine Inhaltsbreite hier würde bei jeder
     # Spalte außer der ersten/letzten ins Negative laufen).
-    content_widths = [klasse_w, titel_w, verlag_w, isbn_w, neupreis_w]
-    if with_fee:
-        content_widths.append(leihgebuehr_w)
     col_widths = [
         w + (0.0 if i == 0 else half_gap) + (0.0 if i == n_cols - 1 else half_gap)
-        for i, w in enumerate(content_widths)
+        for i, w in enumerate(breiten)
     ]
 
-    cols = [klasse_header, "Titel", "Verlag", "ISBN", "Neupreis"]
-    if with_fee:
-        cols.append(leihgebuehr_header)
-
-    data = [list(cols)]
+    data: list[list] = [list(koepfe)]
     for r in rows:
-        line = [
-            r["klasse"],
-            Paragraph(r["titel"], CELL_STYLE),
-            Paragraph(r["verlag"], CELL_STYLE),
-            r["isbn"],
-            r["neupreis"],
-        ]
-        if with_fee:
-            line.append(r["leihgebuehr"])
-        data.append(line)
+        data.append([
+            Paragraph(r[sp.key], CELL_STYLE) if sp.umbruch else r[sp.key]
+            for sp in spalten
+        ])
 
     last_row = len(data) - 1
     # Tabellenbild wie im Original: keine Füllfarben, kein Gitternetz, 1.0pt
@@ -405,9 +515,7 @@ def render_table(rows: list[dict], *, with_fee: bool) -> Table:
         ("FONTNAME", (0, 0), (-1, 0), HEADER_FONT),
         ("FONTNAME", (0, 1), (-1, -1), BODY_FONT),
         ("FONTSIZE", (0, 0), (-1, -1), CELL_FONT_SIZE),
-        ("FONTSIZE", (isbn_idx, 1), (isbn_idx, -1), ISBN_FONT_SIZE),
         ("ALIGN", (0, 0), (-1, 0), "LEFT"),
-        ("ALIGN", (neupreis_idx, 1), (-1, -1), "RIGHT"),
         ("LINEBELOW", (0, 0), (-1, 0), 1.0, RULE_COLOR),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         # Reportlab nimmt für Klartext-Zellen (Klasse/ISBN/Neupreis/Leihgebühr)
@@ -440,8 +548,6 @@ def render_table(rows: list[dict], *, with_fee: bool) -> Table:
         # ISBN_VSHIFT wird der ISBN-Spalte oben aufgeschlagen und unten wieder
         # abgezogen — die Zellenhöhe (und damit ggf. die Zeilenhöhe bei
         # einzeiligen Zeilen) bleibt dadurch identisch zu den anderen Spalten.
-        ("TOPPADDING", (isbn_idx, 1), (isbn_idx, -1), CELL_VPAD - VPAD_SHIFT + ISBN_VSHIFT),
-        ("BOTTOMPADDING", (isbn_idx, 1), (isbn_idx, -1), CELL_VPAD + VPAD_SHIFT - ISBN_VSHIFT),
         # Gleicher Abstand zwischen allen Spalten: jede Innenkante bekommt die
         # halbe Lücke, außen (erste/letzte Spalte) bleibt 0 — Tabelle fluchtet
         # weiterhin links mit "Liste für"/Überschrift, rechts mit "gültig für".
@@ -450,6 +556,17 @@ def render_table(rows: list[dict], *, with_fee: bool) -> Table:
         ("LEFTPADDING", (0, 0), (0, -1), 0),
         ("RIGHTPADDING", (-1, 0), (-1, -1), 0),
     ]
+    for i, sp in enumerate(spalten):
+        if sp.schrift != CELL_FONT_SIZE:
+            style.append(("FONTSIZE", (i, 1), (i, -1), sp.schrift))
+        if sp.rechts:
+            style.append(("ALIGN", (i, 1), (i, -1), "RIGHT"))
+        if sp.key == "isbn":
+            # Siehe ISBN_VSHIFT oben.
+            style += [
+                ("TOPPADDING", (i, 1), (i, -1), CELL_VPAD - VPAD_SHIFT + ISBN_VSHIFT),
+                ("BOTTOMPADDING", (i, 1), (i, -1), CELL_VPAD + VPAD_SHIFT - ISBN_VSHIFT),
+            ]
     if last_row >= 1:
         style.append(("LINEBELOW", (0, 1), (-1, last_row), 1.0, ROW_RULE_COLOR))
     table = Table(data, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
@@ -894,7 +1011,7 @@ def subject_story(
     confirmation: bool = False, fkl_map: dict[str, str] | None = None,
     kollegium_map: dict[str, str] | None = None, duplex: bool = False,
     blank_pages: set[int] | None = None, confirmation_page_count: int | None = None,
-    return_by: str | None = None, return_to: str | None = None,
+    return_by: str | None = None, return_to: str | None = None, art: Listenart = FACH_LISTE,
 ) -> list:
     confirm_value = None
     teacher_kuerzel = None
@@ -915,11 +1032,7 @@ def subject_story(
             return_by=return_by if confirmation else None,
             return_to=return_to if confirmation else None,
         ),
-        Paragraph(
-            f"Die folgenden Bücher können für das Fach {subject} über die Schule ausgeliehen werden. "
-            "Bücher, die selbst anzuschaffen sind, werden gesondert in der zweiten Tabelle ausgewiesen.",
-            INTRO_STYLE,
-        ),
+        Paragraph(art.einleitung.format(name=subject), INTRO_STYLE),
     ]
     book_count = len(tables["leih"]) + len(tables["kauf"])
     # Bei genau einem Buch entscheidet die Anzahl seiner Klassenstufen
@@ -968,15 +1081,15 @@ def subject_story(
 
     story.append(Paragraph("Leihbare Bücher", SECTION_STYLE))
     if tables["leih"]:
-        story.append(render_table(tables["leih"], with_fee=True))
+        story.append(render_table(tables["leih"], with_fee=True, spalten=art.spalten))
     else:
-        story.append(Paragraph("Keine leihbaren Bücher in diesem Fach.", EMPTY_STYLE))
+        story.append(Paragraph(art.leer_leih, EMPTY_STYLE))
 
     story.append(Paragraph("Selbst anzuschaffende Bücher", SECTION_STYLE))
     if tables["kauf"]:
-        story.append(render_table(tables["kauf"], with_fee=False))
+        story.append(render_table(tables["kauf"], with_fee=False, spalten=art.spalten))
     else:
-        story.append(Paragraph("Keine selbst anzuschaffenden Bücher in diesem Fach.", EMPTY_STYLE))
+        story.append(Paragraph(art.leer_kauf, EMPTY_STYLE))
 
     if confirmation:
         story.append(
@@ -997,7 +1110,7 @@ def subject_story(
 def measure_subject_pages(
     subjects: list[str], by_subject: dict[str, dict[str, list[dict]]], schoolyear_name: str, *,
     confirmation: bool, fkl_map: dict[str, str], kollegium_map: dict[str, str],
-    return_by: str | None = None, return_to: str | None = None,
+    return_by: str | None = None, return_to: str | None = None, art: Listenart = FACH_LISTE,
 ) -> list[int]:
     """Baut alle Fächer einmal probeweise in einen verworfenen Speicherpuffer
     (kein Datei-Output), jedes mit eigenem, frisch beginnendem PageTemplate —
@@ -1032,7 +1145,7 @@ def measure_subject_pages(
             subject_story(
                 subject, by_subject[subject], schoolyear_name,
                 confirmation=confirmation, fkl_map=fkl_map, kollegium_map=kollegium_map, duplex=False,
-                return_by=return_by, return_to=return_to,
+                return_by=return_by, return_to=return_to, art=art,
             )
         )
         story.append(_RecordEndPage(start_page_holder, page_counts, i))

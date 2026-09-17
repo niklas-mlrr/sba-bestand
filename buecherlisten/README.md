@@ -1,7 +1,7 @@
-# Bücherlisten nach Fach — PDF-Export
+# Bücherlisten nach Fach, Verlag und Jahrgang — PDF-Export
 
 Erzeugt aus den regulären Jahrgangs-Bücherlisten der IServ-Ausleihe-API eine
-fachweise sortierte PDF-Bücherliste. Rein lesend (nur GET) — kein Schreibzugriff
+fach-, verlags- oder jahrgangsweise sortierte PDF-Bücherliste (`--view`). Rein lesend (nur GET) — kein Schreibzugriff
 auf die Produktionsdatenbank.
 
 Es gibt keinen eigenen API-Endpunkt für diese Sicht. Das Skript holt alle
@@ -19,9 +19,9 @@ Druckmenü der Seite „Bücherliste nach Fach“.
 
 | Modul | Inhalt |
 |-------|--------|
-| `core/daten.py` | `lade_buecherdaten`, `collect_entries`, `build_subject_tables`, `waehle_faecher` |
+| `core/daten.py` | `lade_buecherdaten`, `collect_entries`, `build_subject_tables`, `build_grade_tables`, `waehle_faecher`/`waehle_gruppen` |
 | `core/layout.py` | das ausgemessene reportlab-Layout, unverändert verschoben |
-| `core/erzeugen.py` | `erzeuge_buecherlisten_pdfs(...)` → PDFs als Bytes, Warnungen statt stderr |
+| `core/erzeugen.py` | `erzeuge_buecherlisten_pdfs(...)` → PDFs als Bytes, Warnungen statt stderr; `erzeuge_schuelerlisten_pdfs(...)` → die IServ-Druckversionen |
 
 Beim Herauslösen wurden die PDFs vor und nach dem Umbau gegen echte Daten
 verglichen (alphabetisch, Bestätigung mit Rückgabe und `--duplex-if-needed`,
@@ -46,6 +46,15 @@ uv run python3 generate_booklists.py --mode aufgabenfeld
 # 1 PDF-Datei pro Fach:
 uv run python3 generate_booklists.py --mode split
 
+# 1 PDF je Verlag-Seite (Spalten Titel, Fach, Klasse, ISBN, Neupreis, Leihgebühr):
+uv run python3 generate_booklists.py --view verlag
+
+# 1 PDF je Jahrgang-Seite (Spalten wie die IServ-Liste, alle Bücher in einer Tabelle):
+uv run python3 generate_booklists.py --view jahrgang
+
+# stattdessen die Druckversionen aus IServ ("Schülerliste"), aneinandergehängt:
+uv run python3 generate_booklists.py --view jahrgang --student-list
+
 # bestimmtes Schuljahr, eigener Zielordner:
 uv run python3 generate_booklists.py --schoolyear "2025/2026" --mode split --output-dir ~/Downloads
 ```
@@ -56,6 +65,27 @@ uv run python3 generate_booklists.py --schoolyear "2025/2026" --mode split --out
 `ModuleNotFoundError: No module named 'reportlab'` fehl. Alternativ direkt mit
 `.venv/bin/python3 generate_booklists.py ...` oder nach Aktivieren von
 `.venv` (`source ../.venv/bin/activate`) mit `python3 ...`.
+
+## Ansichten
+
+`--view` bestimmt, wonach gruppiert wird; `--subjects` (Alias `--publishers`,
+`--grades`) wählt einzelne Gruppen aus, Jahrgänge auch als bloße Zahl.
+
+| `--view` | Kopf/Überschrift | Spalten | Reihenfolge |
+|----------|------------------|---------|-------------|
+| `fach` (Default) | das Fach | Klasse, Titel, Verlag, ISBN, Neupreis, Leihgebühr | Klassen, dann Titel |
+| `verlag` | der Verlag | Titel, Fach, Klasse, ISBN, Neupreis, Leihgebühr | Klassen, dann Titel |
+| `jahrgang` | „Jahrgang N" | Titel, Fach, Verlag, ISBN, Neupreis, Leihgebühr | wie in der IServ-Liste (Grundpaket, dann Wahlbereiche) |
+
+`--confirmation` und `--mode aufgabenfeld` gibt es nur für Fächer: die
+Bestätigung ist an eine Fachkonferenzleitung adressiert, das Aufgabenfeld ein
+Fach-Merkmal.
+
+**`--student-list`** (nur `--view jahrgang`) holt statt der eigenen Liste die
+Druckversion, die IServ selbst an jeder Bücherliste führt — mit Grundpaket und
+Wahlbereichen einzeln. Mehrere Jahrgänge werden mit `pypdf` zu einer Datei
+zusammengehängt, `--duplex` schiebt dabei Leerseiten ein. Die Dateien tragen
+„(Schülerliste)" im Namen, damit sie die eigenen nicht überschreiben.
 
 ## Inhalt pro Fach
 

@@ -8,8 +8,9 @@ beim Import.
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
-from typing import Any, Protocol
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any, Literal, Protocol
 
 import isbnlib
 
@@ -54,22 +55,28 @@ def fmt_grades(grades: tuple[int, ...]) -> str:
     return ", ".join(str(g) for g in grades)
 
 
-def collect_entries(client: BuecherlistenClient, schoolyear_id: str) -> dict[tuple[str, str], dict]:
-    """Alle Bücherlisten-Items eines Schuljahrs, gruppiert nach (Fach, ISBN).
+Ansicht = Literal["fach", "verlag", "jahrgang"]
+ANSICHTEN: tuple[Ansicht, ...] = ("fach", "verlag", "jahrgang")
+OHNE_FACH = "(ohne Fach)"
+OHNE_VERLAG = "(ohne Verlag)"
 
-    Ein Buch, das in mehreren Jahrgangs-Bücherlisten desselben Fachs auftaucht
-    (Mehrjahresband), wird zu einem Eintrag mit der Vereinigung der Klassen
-    zusammengeführt — nicht anhand von series_data.gradesFlat (das ist ein
-    globales Serien-Attribut und kann von den tatsächlichen Bücherlisten-
-    Vorkommen abweichen, verifiziert 2026-08-18), sondern anhand der
-    Bücherlisten-Jahrgänge, in denen das Item tatsächlich erscheint.
-    """
+# (Jahrgang, Bücherlisten-ID, Detail) je Jahrgangsliste, aufsteigend nach Jahrgang.
+Jahrgangslisten = list[tuple[int, int, dict]]
+
+
+def hole_jahrgangslisten(client: BuecherlistenClient, schoolyear_id: str) -> Jahrgangslisten:
+    """Alle Jahrgangs-Bücherlisten eines Schuljahrs, einmal geladen für alle Ansichten."""
     booklists = client.schoolyears.get_booklists(schoolyear_id)
     by_grade = {bl["grade"]: bl for bl in booklists if bl.get("grade") is not None}
+    return [
+        (grade, by_grade[grade]["id"], client.schoolyears.get_booklist(schoolyear_id, by_grade[grade]["id"]))
+        for grade in sorted(by_grade)
+    ]
 
+
+def _sammle(listen: Jahrgangslisten, gruppen_von: Callable[[dict], list[str]]) -> dict[tuple[str, str], dict]:
     entries: dict[tuple[str, str], dict] = {}
-    for grade in sorted(by_grade):
-        bl = client.schoolyears.get_booklist(schoolyear_id, by_grade[grade]["id"])
+    for grade, _, bl in listen:
         for section in bl.get("sections", []):
             for option in section.get("options", []):
                 for item in option.get("items", []):
@@ -77,14 +84,13 @@ def collect_entries(client: BuecherlistenClient, schoolyear_id: str) -> dict[tup
                     isbn = sd.get("isbn") or item.get("series")
                     if not isbn:
                         continue
-                    subjects = sd.get("subjectsFlat") or ["(ohne Fach)"]
-                    for subject in subjects:
-                        key = (subject, isbn)
+                    for gruppe in gruppen_von(sd):
                         entry = entries.setdefault(
-                            key,
+                            (gruppe, isbn),
                             {
                                 "title": sd.get("title", "?"),
                                 "publisher": sd.get("publisher", ""),
+                                "subjects": list(sd.get("subjectsFlat") or []),
                                 "price": sd.get("price"),
                                 "fee": sd.get("fee"),
                                 "borrowable": bool(item.get("borrowable")),
@@ -95,20 +101,50 @@ def collect_entries(client: BuecherlistenClient, schoolyear_id: str) -> dict[tup
     return entries
 
 
+def _faecher_von(sd: dict) -> list[str]:
+    return sd.get("subjectsFlat") or [OHNE_FACH]
+
+
+def _verlag_von(sd: dict) -> list[str]:
+    return [sd.get("publisher") or OHNE_VERLAG]
+
+
+def collect_entries(client: BuecherlistenClient, schoolyear_id: str) -> dict[tuple[str, str], dict]:
+    """Alle Bücherlisten-Items eines Schuljahrs, gruppiert nach (Fach, ISBN).
+
+    Ein Buch, das in mehreren Jahrgangs-Bücherlisten desselben Fachs auftaucht
+    (Mehrjahresband), wird zu einem Eintrag mit der Vereinigung der Klassen
+    zusammengeführt — nicht anhand von series_data.gradesFlat (das ist ein
+    globales Serien-Attribut und kann von den tatsächlichen Bücherlisten-
+    Vorkommen abweichen, verifiziert 2026-08-18), sondern anhand der
+    Bücherlisten-Jahrgänge, in denen das Item tatsächlich erscheint.
+    """
+    return _sammle(hole_jahrgangslisten(client, schoolyear_id), _faecher_von)
+
+
+def _zeile(isbn: str, e: dict, sort_key: tuple) -> dict:
+    grades_sorted = tuple(sorted(e["grades"]))
+    return {
+        "sort_key": sort_key,
+        "klasse": fmt_grades(grades_sorted),
+        "titel": e["title"],
+        "fach": ", ".join(e["subjects"]) or OHNE_FACH,
+        "verlag": e["publisher"],
+        "isbn": format_isbn(isbn),
+        "neupreis": fmt_price(e["price"]),
+        "leihgebuehr": fmt_price(e["fee"]),
+    }
+
+
 def build_subject_tables(entries: dict[tuple[str, str], dict]) -> dict[str, dict[str, list[dict]]]:
-    """subject -> {"leih": [Zeilen...], "kauf": [Zeilen...]}, jeweils fertig sortiert."""
+    """Gruppe -> {"leih": [Zeilen...], "kauf": [Zeilen...]}, jeweils fertig sortiert.
+
+    Die Gruppe ist das Fach (``collect_entries``) oder der Verlag; sortiert
+    wird in beiden Fällen nach Klassen, dann Titel.
+    """
     by_subject: dict[str, dict[str, list[dict]]] = defaultdict(lambda: {"leih": [], "kauf": []})
     for (subject, isbn), e in entries.items():
-        grades_sorted = tuple(sorted(e["grades"]))
-        row = {
-            "sort_key": (grades_sorted, e["title"].lower()),
-            "klasse": fmt_grades(grades_sorted),
-            "titel": e["title"],
-            "verlag": e["publisher"],
-            "isbn": format_isbn(isbn),
-            "neupreis": fmt_price(e["price"]),
-            "leihgebuehr": fmt_price(e["fee"]),
-        }
+        row = _zeile(isbn, e, (tuple(sorted(e["grades"])), e["title"].lower()))
         bucket = "leih" if e["borrowable"] else "kauf"
         by_subject[subject][bucket].append(row)
 
@@ -116,6 +152,41 @@ def build_subject_tables(entries: dict[tuple[str, str], dict]) -> dict[str, dict
         for bucket in ("leih", "kauf"):
             tables[bucket].sort(key=lambda r: r["sort_key"])
     return by_subject
+
+
+def jahrgangsname(grade: int) -> str:
+    return f"Jahrgang {grade}"
+
+
+def build_grade_tables(listen: Jahrgangslisten) -> dict[str, dict[str, list[dict]]]:
+    """"Jahrgang N" -> {"leih", "kauf"} in der Reihenfolge der IServ-Liste.
+
+    Grundpaket zuerst, dann die Wahlbereiche nach ``position`` - wie die
+    IServ-Druckversion, nur ohne Zwischenüberschriften: Wahlbereiche stehen mit
+    in derselben Tabelle. Ein Buch, das in zwei Optionen steht, erscheint einmal.
+    """
+    tabellen: dict[str, dict[str, list[dict]]] = {}
+    for grade, _, bl in listen:
+        tables: dict[str, list[dict]] = {"leih": [], "kauf": []}
+        gesehen: set[str] = set()
+        sections = sorted(bl.get("sections", []), key=lambda s: s.get("position") or 0)
+        for section in sections:
+            for option in section.get("options", []):
+                for item in option.get("items", []):
+                    sd = item.get("series_data", {}) or {}
+                    isbn = sd.get("isbn") or item.get("series")
+                    if not isbn or isbn in gesehen:
+                        continue
+                    gesehen.add(isbn)
+                    e = {
+                        "title": sd.get("title", "?"), "publisher": sd.get("publisher", ""),
+                        "subjects": list(sd.get("subjectsFlat") or []),
+                        "price": sd.get("price"), "fee": sd.get("fee"), "grades": {grade},
+                    }
+                    bucket = "leih" if item.get("borrowable") else "kauf"
+                    tables[bucket].append(_zeile(isbn, e, (len(gesehen),)))
+        tabellen[jahrgangsname(grade)] = tables
+    return tabellen
 
 
 # Kleiner Sicherheitszuschlag auf jede berechnete Inhaltsbreite: reportlabs
@@ -127,15 +198,42 @@ def build_subject_tables(entries: dict[tuple[str, str], dict]) -> dict[str, dict
 
 @dataclass(frozen=True)
 class Buecherdaten:
-    """Ein geladenes Schuljahr: Kennung, Anzeigename und die Tabellen je Fach."""
+    """Ein geladenes Schuljahr: Kennung, Anzeigename und die Tabellen je Gruppe.
+
+    ``je_verlag``, ``je_jahrgang`` und ``listen_ids`` haben Voreinstellungen,
+    damit Tests, die nur Fächer brauchen, sie weglassen können.
+    """
 
     schuljahr_id: str
     schuljahr_name: str
     je_fach: dict[str, dict[str, list[dict]]]
+    je_verlag: dict[str, dict[str, list[dict]]] = field(default_factory=dict)
+    je_jahrgang: dict[str, dict[str, list[dict]]] = field(default_factory=dict)
+    # "Jahrgang N" -> ID der IServ-Bücherliste (für deren Druckversion).
+    listen_ids: dict[str, int] = field(default_factory=dict)
 
     @property
     def faecher(self) -> list[str]:
         return sorted(self.je_fach, key=str.casefold)
+
+    @property
+    def verlage(self) -> list[str]:
+        return sorted(self.je_verlag, key=str.casefold)
+
+    @property
+    def jahrgaenge(self) -> list[str]:
+        return sorted(self.je_jahrgang, key=_jahrgang_zahl)
+
+    def tabellen(self, ansicht: Ansicht) -> dict[str, dict[str, list[dict]]]:
+        return {"fach": self.je_fach, "verlag": self.je_verlag, "jahrgang": self.je_jahrgang}[ansicht]
+
+    def gruppen(self, ansicht: Ansicht) -> list[str]:
+        """Die Gruppennamen einer Ansicht in ihrer natürlichen Reihenfolge."""
+        return {"fach": self.faecher, "verlag": self.verlage, "jahrgang": self.jahrgaenge}[ansicht]
+
+
+def _jahrgang_zahl(name: str) -> int:
+    return int(name.rsplit(" ", 1)[-1])
 
 
 def lade_buecherdaten(client: BuecherlistenClient, schuljahr: str | None = None) -> Buecherdaten:
@@ -146,8 +244,29 @@ def lade_buecherdaten(client: BuecherlistenClient, schuljahr: str | None = None)
     else:
         aktuell = client.schoolyears.get_current()
         schuljahr_id, name = aktuell["id"], aktuell.get("name") or aktuell["id"]
-    tabellen = build_subject_tables(collect_entries(client, schuljahr_id))
-    return Buecherdaten(schuljahr_id=schuljahr_id, schuljahr_name=name, je_fach=dict(tabellen))
+    listen = hole_jahrgangslisten(client, schuljahr_id)
+    return Buecherdaten(
+        schuljahr_id=schuljahr_id,
+        schuljahr_name=name,
+        je_fach=dict(build_subject_tables(_sammle(listen, _faecher_von))),
+        je_verlag=dict(build_subject_tables(_sammle(listen, _verlag_von))),
+        je_jahrgang=build_grade_tables(listen),
+        listen_ids={jahrgangsname(grade): bl_id for grade, bl_id, _ in listen},
+    )
+
+
+def waehle_gruppen(
+    daten: Buecherdaten, ansicht: Ansicht, gewuenscht: list[str],
+) -> tuple[list[str], list[str]]:
+    """Wie :func:`waehle_faecher`, für jede Ansicht; Jahrgänge auch als bloße Zahl ("5").
+
+    Gefundene kommen in der Reihenfolge von ``daten.gruppen(ansicht)``.
+    """
+    verfuegbar = daten.gruppen(ansicht)
+    if ansicht == "jahrgang":
+        gewuenscht = [jahrgangsname(int(g)) if g.strip().isdigit() else g for g in gewuenscht]
+    gefunden, unbekannt = waehle_faecher(verfuegbar, gewuenscht)
+    return sorted(gefunden, key=verfuegbar.index), unbekannt
 
 
 def waehle_faecher(verfuegbar: list[str], gewuenscht: list[str]) -> tuple[list[str], list[str]]:

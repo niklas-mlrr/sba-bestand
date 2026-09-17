@@ -204,13 +204,16 @@ class _Schoolyears:
         grade = bl_id - 100
         items = [
             {"borrowable": True, "series": isbn,
-             "series_data": {"isbn": isbn, "title": title, "fee": 5.0, "subjectsFlat": subjects}}
+             "series_data": {"isbn": isbn, "title": title, "fee": 5.0, "subjectsFlat": subjects,
+                             # Verlag wie in der echten API, fuer die Buecherlisten nach Verlag.
+                             "publisher": _SERIES[isbn].publisher}}
             for isbn, title, subjects in _BOOKS.get(grade, [])
         ]
         # Ein nicht ausleihbarer eBook-Eintrag, der herausgefiltert werden muss.
         items.append({"borrowable": True, "series": "9783128640105",
                       "series_data": {"isbn": "9783128640105", "title": "Deutschbuch eBook",
-                                      "fee": 5.0, "subjectsFlat": ["Deutsch"]}})
+                                      "fee": 5.0, "subjectsFlat": ["Deutsch"],
+                                      "publisher": "Westermann"}})
         return {"sections": [{"options": [{"items": items}]}]}
 
 

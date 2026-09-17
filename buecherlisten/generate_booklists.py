@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bücherlisten eines Schuljahrs nach Fach aufbereitet als PDF.
+"""Bücherlisten eines Schuljahrs nach Fach, Verlag oder Jahrgang als PDF.
 
 Holt alle Bücherlisten (eine je Jahrgang) eines Schuljahrs über die
 IServ-Ausleihe-API und stellt sie fachweise neu zusammen: pro Fach eine
@@ -33,14 +33,30 @@ Seit 2026-09-17 ist dieses Skript nur noch die Kommandozeile: Laden,
 Layout und Erzeugen stehen in ``buecherlisten/core/`` (wie ``bestand/core/``
 für die Bestandsliste), damit sba-dashboard dieselben PDFs erzeugen kann.
 
+Seit 2026-09-17 gibt es neben den Fächern zwei weitere Ansichten (--view):
+nach Verlag (Spalten Titel, Fach, Klasse, ISBN, Neupreis, Leihgebühr) und nach
+Jahrgang (Spalten wie die IServ-Liste, Grundpaket und Wahlbereiche in einer
+Tabelle). Kopf, Schriftgrößen und Tabellenbild sind überall dieselben; es
+unterscheiden sich nur Spalten und Einleitungssatz. --student-list holt beim
+Jahrgang stattdessen die Druckversion aus IServ.
+
 Verwendung:
-  python3 generate_booklists.py [--schoulyear 2026/2027]
+  python3 generate_booklists.py [--view fach|verlag|jahrgang] [--student-list]
+                                 [--schoulyear 2026/2027]
                                  [--mode split|alphabet|aufgabenfeld]
                                  [--subjects "Fach1" "Fach2" ...] [--list-subjects]
                                  [--output-dir PFAD] [--confirmation]
                                  [--return-by DATUM] [--return-to KÜRZEL]
                                  [--duplex | --duplex-if-needed]
 
+  --view           fach (Default) = eine Liste je Fach; verlag = je Verlag;
+                    jahrgang = je Jahrgang. --confirmation und --mode
+                    aufgabenfeld gibt es nur mit --view fach.
+  --student-list   Nur mit --view jahrgang: statt der eigenen Liste die
+                    IServ-Druckversion ("Schülerliste") holen; mehrere
+                    Jahrgänge werden zu einer Datei zusammengehängt
+                    (--mode split: eine Datei je Jahrgang), --duplex schiebt
+                    Leerseiten ein. Dateiname mit "(Schülerliste)".
   --schoolyear     Schuljahr wie "2026/2027" (Default: laufendes Schuljahr)
   --mode           split       = eine PDF-Datei pro Fach,
                                   benannt "Bücherliste <Fach> <Schuljahr>.pdf"
@@ -60,11 +76,14 @@ Verwendung:
                                   Ebenfalls benannt "Bücherliste Fächer
                                   <Schuljahr>.pdf" (wie alphabet)
                    (Default: alphabet)
-  --subjects       Nur diese Fächer aufnehmen (ein oder mehrere Namen, exakt
-                    wie in der Bücherliste, z.B. --subjects Deutsch Mathematik).
-                    Default: alle Fächer, die im Schuljahr vorkommen.
-  --list-subjects  Nur die verfügbaren Fächer des Schuljahrs auflisten und
-                    beenden (keine PDF-Erzeugung).
+  --subjects       Nur diese Fächer/Verlage/Jahrgänge aufnehmen (ein oder
+                    mehrere Namen, exakt wie in der Bücherliste, z.B.
+                    --subjects Deutsch Mathematik); Jahrgänge auch als Zahl
+                    ("--grades 5 6"). Aliasse: --publishers, --grades.
+                    Default: alles, was im Schuljahr vorkommt.
+  --list-subjects  Nur die verfügbaren Fächer/Verlage/Jahrgänge der gewählten
+                    Ansicht auflisten und beenden (keine PDF-Erzeugung).
+                    Alias: --list.
   --output-dir     Zielordner für die PDF(s) (Default: dieser Skriptordner)
   --confirmation   Bestätigungs-Block (Ankreuzfelder + Ort/Datum/Unterschrift
                     Fachkonferenzleitung <Fach>) am Ende jeder Fach-Liste
@@ -131,12 +150,29 @@ from ausleihe import AusleiheClient  # noqa: E402
 from ausleihe.exceptions import NotFoundError  # noqa: E402
 
 # Laden, Layout und Erzeugen stehen seit 2026-09-17 in buecherlisten/core/.
-from buecherlisten.core.daten import lade_buecherdaten, waehle_faecher  # noqa: E402
-from buecherlisten.core.erzeugen import erzeuge_buecherlisten_pdfs  # noqa: E402
+from buecherlisten.core.daten import ANSICHTEN, lade_buecherdaten, waehle_gruppen  # noqa: E402
+from buecherlisten.core.erzeugen import (  # noqa: E402
+    erzeuge_buecherlisten_pdfs,
+    erzeuge_schuelerlisten_pdfs,
+)
+
+# Wie die Gruppen einer Ansicht in Meldungen heißen.
+_GRUPPEN_WORT = {"fach": "Fächer", "verlag": "Verlage", "jahrgang": "Jahrgänge"}
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Bücherlisten nach Fach als PDF.")
+    parser = argparse.ArgumentParser(description="Bücherlisten nach Fach, Verlag oder Jahrgang als PDF.")
+    parser.add_argument(
+        "--view", choices=ANSICHTEN, default="fach",
+        help="fach = eine Liste je Fach; verlag = je Verlag (Spalten Titel, Fach, Klasse, ISBN, "
+             "Neupreis, Leihgebühr); jahrgang = je Jahrgang (Spalten wie die IServ-Liste). "
+             "Default: fach",
+    )
+    parser.add_argument(
+        "--student-list", action="store_true",
+        help="Nur mit --view jahrgang: statt der eigenen Liste die IServ-Druckversion "
+             "(Schülerliste) holen",
+    )
     parser.add_argument("--schoolyear", default=None, help='Schuljahr, z.B. "2026/2027" (Default: laufendes)')
     parser.add_argument(
         "--mode", choices=["split", "alphabet", "aufgabenfeld"], default="alphabet",
@@ -148,12 +184,14 @@ def main() -> None:
              "erreichbar, wird stattdessen alphabetisch sortiert. (Default: alphabet)",
     )
     parser.add_argument(
-        "--subjects", nargs="+", default=None, metavar="FACH",
-        help="Nur diese Fächer aufnehmen (Default: alle vorhandenen Fächer)",
+        "--subjects", "--publishers", "--grades", dest="subjects", nargs="+", default=None,
+        metavar="NAME",
+        help="Nur diese Fächer/Verlage/Jahrgänge aufnehmen, passend zu --view; Jahrgänge auch "
+             'als Zahl ("5"). Default: alle',
     )
     parser.add_argument(
-        "--list-subjects", action="store_true",
-        help="Nur die verfügbaren Fächer auflisten und beenden",
+        "--list-subjects", "--list", dest="list_subjects", action="store_true",
+        help="Nur die verfügbaren Fächer/Verlage/Jahrgänge (je nach --view) auflisten und beenden",
     )
     parser.add_argument("--output-dir", default=None, help="Zielordner (Default: dieser Skriptordner)")
     parser.add_argument(
@@ -182,6 +220,11 @@ def main() -> None:
              "unverändert (keine Leerseiten)",
     )
     args = parser.parse_args()
+    ansicht = args.view
+    if ansicht != "fach" and (args.confirmation or args.mode == "aufgabenfeld"):
+        parser.error("--confirmation und --mode aufgabenfeld gibt es nur mit --view fach")
+    if args.student_list and ansicht != "jahrgang":
+        parser.error("--student-list gibt es nur mit --view jahrgang")
 
     client = AusleiheClient(allow_writes=False)
 
@@ -193,7 +236,8 @@ def main() -> None:
         sys.exit(1)
     schoolyear_id = daten.schuljahr_id
 
-    subjects = daten.faecher
+    wort = _GRUPPEN_WORT[ansicht]
+    subjects = daten.gruppen(ansicht)
     if not subjects:
         print(f"Keine Bücher für Schuljahr {schoolyear_id} gefunden.", file=sys.stderr)
         sys.exit(1)
@@ -204,26 +248,37 @@ def main() -> None:
         return
 
     if args.subjects:
-        selected, unknown = waehle_faecher(subjects, args.subjects)
+        selected, unknown = waehle_gruppen(daten, ansicht, args.subjects)
         if unknown:
             print(
-                f"Fehler: Unbekannte Fächer für Schuljahr {schoolyear_id}: {', '.join(unknown)}",
+                f"Fehler: Unbekannte {wort} für Schuljahr {schoolyear_id}: {', '.join(unknown)}",
                 file=sys.stderr,
             )
-            print(f"Verfügbare Fächer: {', '.join(subjects)}", file=sys.stderr)
+            print(f"Verfügbare {wort}: {', '.join(subjects)}", file=sys.stderr)
             sys.exit(1)
         subjects = selected
 
-    ergebnisse = erzeuge_buecherlisten_pdfs(
-        daten,
-        faecher=subjects,
-        modus=args.mode,
-        bestaetigung=args.confirmation,
-        rueckgabe_bis=args.return_by,
-        rueckgabe_an=args.return_to,
-        doppelseitig=args.duplex or args.duplex_if_needed,
-        nur_falls_noetig=args.duplex_if_needed,
-    )
+    if args.student_list:
+        ergebnisse = erzeuge_schuelerlisten_pdfs(
+            daten,
+            lambda listen_id: client.admin.get_booklist_pdf(daten.schuljahr_id, listen_id),
+            jahrgaenge=subjects,
+            modus="split" if args.mode == "split" else "alphabet",
+            doppelseitig=args.duplex or args.duplex_if_needed,
+            nur_falls_noetig=args.duplex_if_needed,
+        )
+    else:
+        ergebnisse = erzeuge_buecherlisten_pdfs(
+            daten,
+            ansicht=ansicht,
+            faecher=subjects,
+            modus=args.mode,
+            bestaetigung=args.confirmation,
+            rueckgabe_bis=args.return_by,
+            rueckgabe_an=args.return_to,
+            doppelseitig=args.duplex or args.duplex_if_needed,
+            nur_falls_noetig=args.duplex_if_needed,
+        )
 
     out_dir = Path(args.output_dir) if args.output_dir else _HERE
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -28,8 +28,12 @@ from buecherlisten.trg_web import (
     subject_sort_key,
 )
 
-from .daten import Buecherdaten
+from .daten import Ansicht, Buecherdaten
 from .layout import (
+    FACH_LISTE,
+    JAHRGANG_LISTE,
+    VERLAG_LISTE,
+    Listenart,
     PageBreak,
     footer_context,
     measure_subject_pages,
@@ -40,6 +44,13 @@ from .layout import (
 )
 
 Modus = Literal["alphabet", "aufgabenfeld", "split"]
+
+# Ansicht -> (Listenart, Bezeichnung im Titel des Sammel-PDFs)
+_ARTEN: dict[str, tuple[Listenart, str]] = {
+    "fach": (FACH_LISTE, "Fächer"),
+    "verlag": (VERLAG_LISTE, "Verlage"),
+    "jahrgang": (JAHRGANG_LISTE, "Jahrgänge"),
+}
 
 
 @dataclass
@@ -124,20 +135,32 @@ def erzeuge_buecherlisten_pdfs(
     doppelseitig: bool = False,
     nur_falls_noetig: bool = False,
     zuordnungen: Zuordnungen | None = None,
+    ansicht: Ansicht = "fach",
 ) -> list[ErzeugtesPdf]:
-    """Ein PDF (``alphabet``/``aufgabenfeld``) oder eines je Fach (``split``).
+    """Ein PDF (``alphabet``/``aufgabenfeld``) oder eines je Gruppe (``split``).
 
-    ``faecher`` sind exakte Fachnamen aus ``daten.faecher`` (Zuordnung ohne
-    Groß-/Kleinschreibung: :func:`~buecherlisten.core.daten.waehle_faecher`);
-    ``None`` heißt alle. ``doppelseitig`` entspricht ``--duplex``, zusammen
-    mit ``nur_falls_noetig`` ``--duplex-if-needed``. Rückgabe-Angaben wirken
-    nur mit ``bestaetigung``.
+    ``ansicht`` wählt Fach-, Verlags- oder Jahrgangslisten; ``faecher`` sind
+    dann exakte Namen aus ``daten.gruppen(ansicht)`` (Zuordnung ohne
+    Groß-/Kleinschreibung: :func:`~buecherlisten.core.daten.waehle_gruppen`);
+    ``None`` heißt alle. Bestätigung und ``aufgabenfeld`` gibt es nur für
+    Fächer. ``doppelseitig`` entspricht ``--duplex``, zusammen mit
+    ``nur_falls_noetig`` ``--duplex-if-needed``. Rückgabe-Angaben wirken nur
+    mit ``bestaetigung``.
     """
+    if ansicht != "fach" and (bestaetigung or modus == "aufgabenfeld"):
+        raise ValueError("Bestätigung und Sortierung nach Aufgabenfeld gibt es nur für Fächer.")
+    art, sammel_label = _ARTEN[ansicht]
     vorgabe = zuordnungen or Zuordnungen()
     warnungen: list[str] = []
-    by_subject = daten.je_fach
+    by_subject = daten.tabellen(ansicht)
     schoolyear_name = daten.schuljahr_name
-    subjects = sorted(faecher, key=str.casefold) if faecher is not None else daten.faecher
+    reihenfolge = daten.gruppen(ansicht)
+    if faecher is None:
+        subjects = reihenfolge
+    elif ansicht == "fach":
+        subjects = sorted(faecher, key=str.casefold)
+    else:
+        subjects = sorted(faecher, key=reihenfolge.index)
     if not bestaetigung:
         rueckgabe_bis = rueckgabe_an = None
     rueckgabe_bis = rueckgabe_bis or None
@@ -164,7 +187,7 @@ def erzeuge_buecherlisten_pdfs(
         page_counts = measure_subject_pages(
             subjects, by_subject, schoolyear_name,
             confirmation=bestaetigung, fkl_map=fkl_map, kollegium_map=kollegium_map,
-            return_by=rueckgabe_bis, return_to=rueckgabe_an,
+            return_by=rueckgabe_bis, return_to=rueckgabe_an, art=art,
         )
     effective_duplex = doppelseitig
     if duplex_if_needed:
@@ -177,8 +200,8 @@ def erzeuge_buecherlisten_pdfs(
     title_prefix = "Bestätigung " if bestaetigung else ""
 
     if modus != "split":
-        label = "Fächer" if modus == "alphabet" else "Fächer (nach Aufgabenfeld)"
-        dateiname = f"{title_prefix}Bücherliste Fächer {sy_label}.pdf"
+        label = sammel_label if modus == "alphabet" else "Fächer (nach Aufgabenfeld)"
+        dateiname = f"{title_prefix}Bücherliste {sammel_label} {sy_label}.pdf"
         title = f"{title_prefix}Bücherliste {label} {daten.schuljahr_id}"
         puffer = io.BytesIO()
         if bestaetigung:
@@ -201,7 +224,7 @@ def erzeuge_buecherlisten_pdfs(
                     subject_story(
                         subject, by_subject[subject], schoolyear_name,
                         confirmation=False, fkl_map=fkl_map, kollegium_map=kollegium_map,
-                        duplex=effective_duplex, blank_pages=blank_pages,
+                        duplex=effective_duplex, blank_pages=blank_pages, art=art,
                     )
                 )
             write_pdf(
@@ -220,7 +243,7 @@ def erzeuge_buecherlisten_pdfs(
             confirmation=bestaetigung, fkl_map=fkl_map, kollegium_map=kollegium_map,
             duplex=effective_duplex, blank_pages=einzel_leer,
             confirmation_page_count=page_counts[i] if page_counts else None,
-            return_by=rueckgabe_bis, return_to=rueckgabe_an,
+            return_by=rueckgabe_bis, return_to=rueckgabe_an, art=art,
         )
         title = f"{title_prefix}Bücherliste {subject} {daten.schuljahr_id}"
         puffer = io.BytesIO()
@@ -234,3 +257,59 @@ def erzeuge_buecherlisten_pdfs(
             warnungen if i == 0 else [],
         ))
     return ergebnisse
+
+
+def erzeuge_schuelerlisten_pdfs(
+    daten: Buecherdaten,
+    hole_pdf: Callable[[int], bytes],
+    *,
+    jahrgaenge: list[str] | None = None,
+    modus: Literal["alphabet", "split"] = "alphabet",
+    doppelseitig: bool = False,
+    nur_falls_noetig: bool = False,
+) -> list[ErzeugtesPdf]:
+    """Die IServ-Druckversionen ("Schülerliste") der Jahrgangslisten.
+
+    ``hole_pdf`` bekommt die ID einer Bücherliste und liefert deren PDF, z. B.
+    ``lambda i: client.admin.get_booklist_pdf(daten.schuljahr_id, i)``.
+    ``alphabet`` hängt die Jahrgänge aufsteigend zu einem PDF zusammen,
+    ``split`` liefert eines je Jahrgang. Doppelseitig wie bei den eigenen
+    Listen: jeder Jahrgang wird mit einer leeren Seite auf gerade Seitenzahl
+    gebracht (mit ``nur_falls_noetig`` nur, wenn einer mehr als eine Seite hat).
+    """
+    from pypdf import PdfReader, PdfWriter  # Extra "pdf", wie reportlab
+
+    namen = daten.jahrgaenge
+    if jahrgaenge is not None:
+        namen = sorted(jahrgaenge, key=namen.index)
+    leser = [PdfReader(io.BytesIO(hole_pdf(daten.listen_ids[name]))) for name in namen]
+    auffuellen = doppelseitig and (
+        not nur_falls_noetig or any(len(r.pages) > 1 for r in leser)
+    )
+    sy_label = sanitize_filename(daten.schuljahr_id)
+
+    def schreibe(teile: list[PdfReader], titel: str) -> bytes:
+        writer = PdfWriter()
+        for reader in teile:
+            for seite in reader.pages:
+                writer.add_page(seite)
+            if auffuellen and len(reader.pages) % 2 == 1:
+                letzte = reader.pages[-1].mediabox
+                writer.add_blank_page(width=letzte.width, height=letzte.height)
+        writer.add_metadata({"/Title": titel})
+        puffer = io.BytesIO()
+        writer.write(puffer)
+        return puffer.getvalue()
+
+    if modus == "split":
+        ergebnisse = []
+        for name, reader in zip(namen, leser):
+            titel = f"Bücherliste {name} {daten.schuljahr_id} (Schülerliste)"
+            ergebnisse.append(ErzeugtesPdf(
+                schreibe([reader], titel), f"Bücherliste {name} {sy_label} (Schülerliste).pdf", titel,
+            ))
+        return ergebnisse
+    titel = f"Bücherliste Jahrgänge {daten.schuljahr_id} (Schülerliste)"
+    return [ErzeugtesPdf(
+        schreibe(leser, titel), f"Bücherliste Jahrgänge {sy_label} (Schülerliste).pdf", titel,
+    )]
