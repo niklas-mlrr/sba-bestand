@@ -10,6 +10,23 @@ und stellt die Bücher clientseitig nach Fach neu zusammen — inklusive korrekt
 Zusammenführen von Mehrjahresbänden (z.B. "Elemente Chemie 5/6"), die in
 mehreren Jahrgangs-Bücherlisten gleichzeitig auftauchen.
 
+## Bibliothek und Kommandozeile
+
+Seit 2026-09-17 ist `generate_booklists.py` nur noch die Kommandozeile. Die
+Arbeit steht in `core/`, nach dem Vorbild von `bestand/core/`, und wird mit
+`sba-bestand` installiert. sba-dashboard druckt damit dieselben PDFs aus dem
+Druckmenü der Seite „Bücherliste nach Fach“.
+
+| Modul | Inhalt |
+|-------|--------|
+| `core/daten.py` | `lade_buecherdaten`, `collect_entries`, `build_subject_tables`, `waehle_faecher` |
+| `core/layout.py` | das ausgemessene reportlab-Layout, unverändert verschoben |
+| `core/erzeugen.py` | `erzeuge_buecherlisten_pdfs(...)` → PDFs als Bytes, Warnungen statt stderr |
+
+Beim Herauslösen wurden die PDFs vor und nach dem Umbau gegen echte Daten
+verglichen (alphabetisch, Bestätigung mit Rückgabe und `--duplex-if-needed`,
+Aufgabenfeld mit `--duplex`): 48 Seiten pixelgleich.
+
 ## Schnellstart
 
 ```bash

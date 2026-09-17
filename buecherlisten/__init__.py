@@ -1,3 +1,6 @@
-"""Bücherlisten-Tooling. Kein Paketinhalt des Rads (siehe pyproject.toml,
-[tool.setuptools.packages.find]) — diese Datei existiert nur, damit tests/
-absolute Importe wie ``from buecherlisten.trg_web import ...`` machen kann."""
+"""Bücherlisten-Tooling.
+
+Seit 2026-09-17 Teil des installierten Pakets: ``buecherlisten/core/`` ist die
+Bibliothek, die ``generate_booklists.py`` und sba-dashboard gemeinsam nutzen.
+Das Skript selbst und die PDFs in diesem Ordner sind kein Bibliotheksinhalt.
+"""
